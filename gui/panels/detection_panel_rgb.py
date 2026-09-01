@@ -550,9 +550,12 @@ class DetectionPanelRGB(QWidget):
             f"_{cfg.session.detection_mode.value}"
         )
 
-        # EventLogger — RGB session log written directly to project logs/.
-        # The shared EventLogger expects ABENConfig.storage; instead we
-        # write a lightweight session JSON here.
+        # EventLogger — real per-event research record (JSONL/CSV/
+        # GeoJSON/summary). Session metadata JSON is written immediately
+        # so a record exists even if the session crashes before any
+        # spray event happens; the EventLogger itself persists each
+        # individual spray event as it occurs.
+        self._logger = None
         try:
             log_dir = cfg.logging.base_dir
             log_dir.mkdir(parents=True, exist_ok=True)
@@ -571,16 +574,37 @@ class DetectionPanelRGB(QWidget):
             meta_path = log_dir / f"{session_id}_session.json"
             with open(meta_path, "w") as f:
                 json.dump(session_meta, f, indent=2)
-            self._session_log_path = log_dir / f"{session_id}_events.log"
-            self._session_log_path.touch()
-            self._logger = True   # flag — we handle logging directly
             self.shared_log.log(
                 "DETECT", f"Session log: {meta_path.name}", "info")
         except Exception as e:
             self.shared_log.log(
-                "DETECT", f"Session log unavailable: {e}", "warn")
-            self._logger = None
-            self._session_log_path = None
+                "DETECT", f"Session metadata write failed: {e}", "warn")
+
+        if cfg.logging.log_spray_events:
+            try:
+                from core.event_logger import EventLogger
+                self._logger = EventLogger(cfg, session_id)
+                self._logger.start()
+                self.shared_log.log(
+                    "DETECT",
+                    f"Event logger active — spray events will be "
+                    f"recorded to {self._logger._jsonl_path.name}",
+                    "ok")
+            except Exception as e:
+                self.shared_log.log(
+                    "DETECT",
+                    f"⚠ EventLogger unavailable — spray events will NOT "
+                    f"be recorded to disk this session: {e}",
+                    "error")
+                logging.error(
+                    f"EventLogger construction/start failed: {e}",
+                    exc_info=True)
+                self._logger = None
+        else:
+            self.shared_log.log(
+                "DETECT",
+                "Event logging disabled (cfg.logging.log_spray_events=False)",
+                "warn")
 
         try:
             gantry      = self.gantry_ctrl_ref()
@@ -639,8 +663,21 @@ class DetectionPanelRGB(QWidget):
                 self._odom.stop()
             except Exception:
                 pass
-        # _logger is True (lightweight) or None — no .stop() needed
-        self._logger = None
+
+        if self._logger is not None:
+            try:
+                summary = self._logger.stop()
+                self.shared_log.log(
+                    "DETECT",
+                    f"Event log closed — {summary.get('total_events', 0)} "
+                    f"event(s) recorded this session",
+                    "info")
+            except Exception as e:
+                self.shared_log.log(
+                    "DETECT", f"⚠ Event logger stop() failed: {e}", "error")
+                logging.error(
+                    f"EventLogger.stop() failed: {e}", exc_info=True)
+            self._logger = None
 
         if self._zones:
             self._zones.reset()
@@ -1071,6 +1108,19 @@ class DetectionPanelRGB(QWidget):
             "DETECT",
             f"Spray: {event.zone_name} | {names} | {conf:.2f}",
             "ok")
+
+        if self._logger is not None:
+            try:
+                self._logger.log_event(event)
+            except Exception as e:
+                # Never let a logging failure interrupt spraying -- but
+                # never swallow it silently either, given the history
+                # here. This is the primary research data output; if
+                # it stops working mid-session the operator should know.
+                self.shared_log.log(
+                    "DETECT", f"⚠ Event logging failed: {e}", "error")
+                logging.error(
+                    f"EventLogger.log_event failed: {e}", exc_info=True)
 
     def _on_static_toggle(self, state):
         from PyQt5.QtCore import Qt as _Qt
