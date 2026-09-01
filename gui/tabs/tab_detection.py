@@ -17,7 +17,7 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtCore import Qt, pyqtSignal
 
 from gui.style import _divider, _sec, _muted, LED
-from gui.theme_manager import theme_manager
+from gui.theme_manager import theme_manager, _darken, _lighten
 from gui.shared_log import UnifiedLog, LogPanel
 from gui.panels.gantry_panel import GantryPanel
 from gui.panels.spray_panel import SprayPanel
@@ -197,46 +197,60 @@ class DetectionTab(QWidget):
         info = QLabel(
             "Camera settings are shared with Data Collection tab. "
             "Changes here apply to both tabs immediately.")
-        info.setStyleSheet(
-            "color:#60a080;font-size:9px;font-family:'Noto Sans',Arial,sans-serif;"
-            "padding:4px;background:#0a1a0a;border-radius:3px;")
+        theme_manager.register_widget(
+            info, lambda p: (
+                f"color:{_lighten(p['green'],10)};font-size:9px;"
+                f"font-family:'Noto Sans',Arial,sans-serif;"
+                f"padding:4px;background:{_darken(p['green'],55)};"
+                f"border-radius:3px;"))
         info.setWordWrap(True)
         outer.addWidget(info)
 
         # ── Preset buttons ────────────────────────────────────
         grp = QGroupBox("Lighting Presets")
-        grp.setStyleSheet(
-            "QGroupBox{border:1px solid #2a5a3a;border-radius:4px;"
-            "margin-top:8px;color:#60c090;font-size:10px;}"
-            "QGroupBox::title{subcontrol-origin:margin;padding:0 4px;}")
+        theme_manager.register_widget(
+            grp, lambda p: (
+                f"QGroupBox{{border:1px solid {_darken(p['green'],30)};"
+                f"border-radius:4px;margin-top:8px;color:{p['green']};"
+                f"font-size:10px;}}"
+                f"QGroupBox::title{{subcontrol-origin:margin;padding:0 4px;}}"))
         glay = QVBoxLayout(grp)
 
         btn_outdoor = QPushButton("🌤  Outdoor / Field  (exp=5)")
-        btn_outdoor.setStyleSheet(
-            "QPushButton{background:#1a3a2a;color:#60d090;"
-            "border:1px solid #2a6a4a;border-radius:4px;"
-            "padding:6px;font-family:'Noto Sans',Arial,sans-serif;font-size:10px;}"
-            "QPushButton:hover{background:#2a4a3a;}")
+        theme_manager.register_widget(
+            btn_outdoor, lambda p: (
+                f"QPushButton{{background:{_darken(p['green'],45)};"
+                f"color:{_lighten(p['green'],10)};"
+                f"border:1px solid {_darken(p['green'],25)};border-radius:4px;"
+                f"padding:6px;font-family:'Noto Sans',Arial,sans-serif;"
+                f"font-size:10px;}}"
+                f"QPushButton:hover{{background:{_darken(p['green'],35)};}}"))
         btn_outdoor.clicked.connect(
             lambda: getattr(self.acq, "_preset_outdoor", lambda: None)())
         glay.addWidget(btn_outdoor)
 
         btn_cloudy = QPushButton("☁  Cloudy / Shade  (exp=80)")
-        btn_cloudy.setStyleSheet(
-            "QPushButton{background:#1a2a3a;color:#80b0d0;"
-            "border:1px solid #2a4a6a;border-radius:4px;"
-            "padding:6px;font-family:'Noto Sans',Arial,sans-serif;font-size:10px;}"
-            "QPushButton:hover{background:#2a3a4a;}")
+        theme_manager.register_widget(
+            btn_cloudy, lambda p: (
+                f"QPushButton{{background:{_darken(p['blue'],45)};"
+                f"color:{_lighten(p['blue'],10)};"
+                f"border:1px solid {_darken(p['blue'],25)};border-radius:4px;"
+                f"padding:6px;font-family:'Noto Sans',Arial,sans-serif;"
+                f"font-size:10px;}}"
+                f"QPushButton:hover{{background:{_darken(p['blue'],35)};}}"))
         btn_cloudy.clicked.connect(
             lambda: getattr(self.acq, "_preset_cloudy", lambda: None)())
         glay.addWidget(btn_cloudy)
 
         btn_indoor = QPushButton("💡  Indoor / Lab  (exp=300)")
-        btn_indoor.setStyleSheet(
-            "QPushButton{background:#2a2a1a;color:#d0c060;"
-            "border:1px solid #5a5a2a;border-radius:4px;"
-            "padding:6px;font-family:'Noto Sans',Arial,sans-serif;font-size:10px;}"
-            "QPushButton:hover{background:#3a3a2a;}")
+        theme_manager.register_widget(
+            btn_indoor, lambda p: (
+                f"QPushButton{{background:{_darken(p['amber'],55)};"
+                f"color:{_lighten(p['amber'],5)};"
+                f"border:1px solid {_darken(p['amber'],30)};border-radius:4px;"
+                f"padding:6px;font-family:'Noto Sans',Arial,sans-serif;"
+                f"font-size:10px;}}"
+                f"QPushButton:hover{{background:{_darken(p['amber'],45)};}}"))
         btn_indoor.clicked.connect(
             lambda: getattr(self.acq, "_preset_indoor", lambda: None)())
         glay.addWidget(btn_indoor)
