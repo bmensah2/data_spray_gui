@@ -428,6 +428,15 @@ class SessionConfig:
     detection_mode:  DetectionMode = DetectionMode.WEED
     notes:           str          = ""
 
+    # Research record metadata (event_logger.py CSV/JSONL/summary
+    # exports include these on every row -- distinct from `operator`,
+    # which is whoever is physically running the robot that session;
+    # these describe the research program the data belongs to).
+    researcher:      str          = "nana"
+    institution:     str          = "NDSU"
+    location:        str          = ""
+    crop:            str          = ""
+
 
 # ─────────────────────────────────────────────────────────────
 #  ROOT CONFIG

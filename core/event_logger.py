@@ -178,21 +178,33 @@ class EventLogger:
         self.cfg        = cfg
         self.session_id = session_id
         self._lock      = threading.Lock()
-        self._queue     = []         # buffered entries before disk flush
+        # Independent pending queues per output destination -- JSONL and
+        # CSV writes can fail independently (e.g. one file's directory
+        # is fine, the other's underlying device just dropped), so they
+        # must be retried independently. A shared queue that only clears
+        # on "at least one destination succeeded" would either lose data
+        # (clear-before-write, the original bug) or write duplicate
+        # JSONL lines on retry after a CSV-only failure.
+        self._pending_jsonl: List[EventLogEntry] = []
+        self._pending_csv:   List[EventLogEntry] = []
         self._entries:  List[EventLogEntry] = []
         self._running   = False
         self._writer_thread = None
 
-        # Setup paths
-        events_dir = cfg.storage.events_path(session_id)
+        # Setup paths — based on cfg.logging.base_dir, the same
+        # already-working config path detection_panel_rgb.py's session
+        # metadata uses. (Previously referenced cfg.storage, which does
+        # not exist anywhere on RGBConfig -- constructing an EventLogger
+        # at all raised AttributeError immediately. See git history for
+        # the full story: this class was never actually wired into the
+        # live GUI, which is why nobody hit this until now.)
+        events_dir = cfg.logging.base_dir / "events" / session_id
         events_dir.mkdir(parents=True, exist_ok=True)
 
         self._jsonl_path = events_dir / f"{session_id}_events.jsonl"
         self._csv_path   = events_dir / f"{session_id}_events.csv"
         self._summary_path = (
-            cfg.storage.base_path /
-            cfg.storage.sessions_dir /
-            f"{session_id}_event_summary.json"
+            cfg.logging.base_dir / f"{session_id}_event_summary.json"
         )
 
         # CSV writer setup
@@ -238,6 +250,26 @@ class EventLogger:
         # Final flush
         self._flush_to_disk()
 
+        # Warn loudly if anything still didn't make it to disk after
+        # the final attempt -- this is the one place the researcher
+        # will actually see it, since the summary JSON below is built
+        # from self._entries (always complete in memory) and would
+        # otherwise look identical whether the on-disk files are
+        # complete or silently missing events.
+        with self._lock:
+            lost_jsonl = len(self._pending_jsonl)
+            lost_csv   = len(self._pending_csv)
+        if lost_jsonl or lost_csv:
+            logging.error(
+                f"⚠⚠ EventLogger stop(): {lost_jsonl} event(s) never "
+                f"written to JSONL, {lost_csv} never written to CSV, "
+                f"after final flush attempt. These events ARE still in "
+                f"the session summary below (in-memory), but the "
+                f"{self._jsonl_path.name} / {self._csv_path.name} files "
+                f"on disk are INCOMPLETE. Check disk space and that "
+                f"the storage path is still mounted."
+            )
+
         # Close CSV
         if self._csv_file:
             self._csv_file.close()
@@ -274,7 +306,8 @@ class EventLogger:
 
         with self._lock:
             self._entries.append(entry)
-            self._queue.append(entry)
+            self._pending_jsonl.append(entry)
+            self._pending_csv.append(entry)
 
         logging.info(
             f"📝 Event logged: {entry.event_id} | "
@@ -365,29 +398,54 @@ class EventLogger:
             self._flush_to_disk()
 
     def _flush_to_disk(self):
-        """Write all queued entries to JSONL and CSV."""
+        """
+        Write all pending entries to JSONL and CSV.
+
+        Each destination is written and retried independently: a batch
+        is only removed from its pending queue after that destination's
+        write actually succeeds. If a write fails (disk full, storage
+        unmounted, permissions, etc.) the batch stays queued and is
+        retried on the next flush cycle rather than being silently
+        dropped -- this is what actually makes the JSONL file able to
+        "survive power loss mid-session" as documented, instead of
+        just losing whatever was in flight at the moment of failure.
+
+        Uses del pending[:n] rather than clear() when removing a
+        written batch, because new entries may have been appended to
+        the pending list (from log_event(), on another thread) between
+        when this batch was snapshotted and when the write completed --
+        clear() would incorrectly drop those too.
+        """
         with self._lock:
-            if not self._queue:
-                return
-            batch = list(self._queue)
-            self._queue.clear()
+            jsonl_batch = list(self._pending_jsonl)
+            csv_batch   = list(self._pending_csv)
 
-        # Append to JSONL
-        try:
-            with open(self._jsonl_path, 'a') as f:
-                for entry in batch:
-                    f.write(json.dumps(entry.to_dict()) + '\n')
-        except Exception as e:
-            logging.error(f"JSONL write error: {e}")
+        if jsonl_batch:
+            try:
+                with open(self._jsonl_path, 'a') as f:
+                    for entry in jsonl_batch:
+                        f.write(json.dumps(entry.to_dict()) + '\n')
+                with self._lock:
+                    del self._pending_jsonl[:len(jsonl_batch)]
+            except Exception as e:
+                logging.error(
+                    f"JSONL write error (will retry next flush, "
+                    f"{len(jsonl_batch)} event(s) still pending): {e}"
+                )
 
-        # Append to CSV
-        try:
-            if self._csv_writer:
-                for entry in batch:
-                    self._csv_writer.writerow(entry.to_csv_row())
-                self._csv_file.flush()
-        except Exception as e:
-            logging.error(f"CSV write error: {e}")
+        if csv_batch:
+            try:
+                if self._csv_writer:
+                    for entry in csv_batch:
+                        self._csv_writer.writerow(entry.to_csv_row())
+                    self._csv_file.flush()
+                    with self._lock:
+                        del self._pending_csv[:len(csv_batch)]
+            except Exception as e:
+                logging.error(
+                    f"CSV write error (will retry next flush, "
+                    f"{len(csv_batch)} event(s) still pending): {e}"
+                )
 
     # ── Summary ───────────────────────────────────────────────
 
@@ -485,7 +543,7 @@ class EventLogger:
         Returns path to the exported .geojson file.
         """
         if output_path is None:
-            events_dir = self.cfg.storage.events_path(self.session_id)
+            events_dir = self.cfg.logging.base_dir / "events" / self.session_id
             output_path = events_dir / f"{self.session_id}_map.geojson"
 
         with self._lock:
@@ -562,7 +620,7 @@ if __name__ == '__main__':
     # Use temp directory for test
     import tempfile
     tmp = Path(tempfile.mkdtemp())
-    cfg.storage.base_path = tmp
+    cfg.logging.base_dir = tmp
 
     session_id = "20260421_test_weed_mu_4_leaf_logger_test"
     logger = EventLogger(cfg, session_id)
@@ -633,7 +691,7 @@ if __name__ == '__main__':
     # ── Test 2: CLS mode events ───────────────────────────────
     print("Test 2: CLS mode events — flagged")
     cfg_cls = get_cls_config(field_id='cls_logger_test')
-    cfg_cls.storage.base_path = tmp
+    cfg_cls.logging.base_dir = tmp
     session_cls = "20260421_test_cls_mu_vegetative_cls_logger_test"
     logger_cls = EventLogger(cfg_cls, session_cls)
     logger_cls.start()
@@ -718,6 +776,52 @@ if __name__ == '__main__':
     print(f"  First point: lon={feat['geometry']['coordinates'][0]}, "
           f"lat={feat['geometry']['coordinates'][1]} ✓")
     print(f"  Properties: {list(feat['properties'].keys())} ✓")
+    print()
+
+    # ── Test 6: write failure doesn't silently drop events ────
+    print("Test 6: JSONL write failure is retried, not silently dropped")
+    print("  (this is the actual bug: _flush_to_disk() used to clear")
+    print("   the queue BEFORE confirming the write succeeded)")
+
+    cfg6 = get_weed_config(field_id='resilience_test')
+    tmp6 = Path(tempfile.mkdtemp())
+    cfg6.logging.base_dir = tmp6
+    session6 = "resilience_test_session"
+    logger6 = EventLogger(cfg6, session6)
+    logger6.start()
+
+    ev6 = make_event('ZoneA', 0, 0, 'kochia', 0.85, 46.29, -96.61)
+    logger6.log_event(ev6)
+
+    # Simulate a transient write failure by making the JSONL path
+    # temporarily unwritable (directory doesn't exist / permission-like
+    # failure) right as a flush would occur.
+    real_path = logger6._jsonl_path
+    logger6._jsonl_path = Path("/nonexistent_dir_on_purpose/events.jsonl")
+
+    logger6._flush_to_disk()  # this attempt should fail and NOT drop the event
+    with logger6._lock:
+        still_pending = len(logger6._pending_jsonl)
+    assert still_pending == 1, (
+        f"Event should still be pending after a failed write, "
+        f"got {still_pending} pending (bug: event was dropped)"
+    )
+    print(f"  Event survived a failed write attempt (still pending) ✓")
+
+    # "Fix" the path (simulating the disk/mount coming back) and retry
+    logger6._jsonl_path = real_path
+    logger6._flush_to_disk()
+    with logger6._lock:
+        still_pending = len(logger6._pending_jsonl)
+    assert still_pending == 0, "Event should be written once the path is valid again"
+    assert real_path.exists()
+    lines = real_path.read_text().strip().split('\n')
+    assert len(lines) == 1
+    assert json.loads(lines[0])['event_id'] == ev6.event_id
+    print(f"  Event successfully written on retry once path recovered ✓")
+
+    logger6.stop()
+    shutil.rmtree(tmp6)
     print()
 
     # Cleanup
