@@ -27,55 +27,73 @@ from PyQt5.QtWidgets import (
 )
 from PyQt5.QtCore import Qt
 
-# ── Constants (mirror navigation_panel_rgb.py) ─────────────────
+from gui.theme_manager import theme_manager
+
+# -- Constants (mirror navigation_panel_rgb.py) -----------------
 HUSKY_IP       = "192.168.131.1"
 HUSKY_USER     = "administrator"
 MISSIONS_HUSKY = "~/missions"
 
-# ── Styles ────────────────────────────────────────────────────
-EDITOR_STYLE = (
-    "background:#0a0d14;"
-    "color:#c8d0e0;"
-    "font-family:'Noto Sans',Arial,sans-serif;"
-    "font-size:11px;"
-    "border:1px solid #2a2f3d;"
-    "border-radius:4px;"
-    "selection-background-color:#1e4060;"
-)
+# -- Styles -------------------------------------------------------
+# These used to be module-level string constants computed once at
+# import time -- meaning they were permanently frozen to whichever
+# theme happened to be active the first time this module was
+# imported, and never reflected the theme active when a mission
+# editor dialog was actually opened. Converted to functions that
+# build fresh from theme_manager.palette() each time they're called
+# (at dialog construction, and again via register_widget() for any
+# widget that should also update live if the theme changes while
+# the dialog is open).
 
-DIALOG_STYLE = (
-    "QDialog{background:#0f1117;color:#e8eaf0;}"
-    "QLabel{color:#e8eaf0;font-family:'Noto Sans',Arial,sans-serif;font-size:10px;}"
-    "QPushButton{font-family:'Noto Sans',Arial,sans-serif;font-size:11px;"
-    "border-radius:4px;padding:6px 14px;}"
-    "QLineEdit{background:#1a1e2e;color:#e8eaf0;"
-    "border:1px solid #2a2f3d;border-radius:4px;padding:4px;"
-    "font-family:'Noto Sans',Arial,sans-serif;font-size:11px;}"
-)
+def _editor_style(p):
+    return (
+        f"background:{p['bg0']};"
+        f"color:{p['text_dim']};"
+        f"font-family:'Noto Sans',Arial,sans-serif;"
+        f"font-size:11px;"
+        f"border:1px solid {p['border2']};"
+        f"border-radius:4px;"
+        f"selection-background-color:{p['btn_bg']};"
+    )
 
-HELP_HTML = """
-<b style='color:#4a9eff'>YAML Mission Reference</b><br><br>
-<b style='color:#8090a8'>Top-level fields:</b><br>
-<span style='color:#c8d0e0'>description:</span>
-<span style='color:#8090a8'> Short mission name</span><br>
-<span style='color:#c8d0e0'>speed:</span>
-<span style='color:#8090a8'> Robot speed m/s (0.05–0.5)</span><br>
-<span style='color:#c8d0e0'>capture_interval:</span>
-<span style='color:#8090a8'> Distance between captures (m)</span><br>
-<span style='color:#c8d0e0'>return_home:</span>
-<span style='color:#8090a8'> true or false</span><br><br>
-<b style='color:#8090a8'>Step actions:</b><br>
-<span style='color:#00c896'>forward</span> — drive forward N meters<br>
-<span style='color:#00c896'>backward</span> — drive backward N meters<br>
-<span style='color:#00c896'>left / right</span> — rotate N degrees<br>
-<span style='color:#00c896'>capture_stop</span> — stop auto-capture<br>
-<span style='color:#00c896'>return_home</span> — return to start<br><br>
-<b style='color:#8090a8'>Step modes:</b><br>
-<span style='color:#f5a623'>capture</span> — camera only, no spray<br>
-<span style='color:#f5a623'>detect</span>  — camera + spray armed<br>
-<span style='color:#f5a623'>navigate</span> — move only, no capture<br><br>
-<b style='color:#8090a8'>Example:</b><br>
-<code style='color:#b0c8b0;background:#0a0d14;display:block;padding:4px'>
+
+def _dialog_style(p):
+    return (
+        f"QDialog{{background:{p['bg']};color:{p['text']};}}"
+        f"QLabel{{color:{p['text']};font-family:'Noto Sans',Arial,sans-serif;"
+        f"font-size:10px;}}"
+        f"QPushButton{{font-family:'Noto Sans',Arial,sans-serif;font-size:11px;"
+        f"border-radius:4px;padding:6px 14px;}}"
+        f"QLineEdit{{background:{p['input_bg']};color:{p['text']};"
+        f"border:1px solid {p['border2']};border-radius:4px;padding:4px;"
+        f"font-family:'Noto Sans',Arial,sans-serif;font-size:11px;}}"
+    )
+
+
+def _help_html(p):
+    return f"""
+<b style='color:{p['blue']}'>YAML Mission Reference</b><br><br>
+<b style='color:{p['muted']}'>Top-level fields:</b><br>
+<span style='color:{p['text_dim']}'>description:</span>
+<span style='color:{p['muted']}'> Short mission name</span><br>
+<span style='color:{p['text_dim']}'>speed:</span>
+<span style='color:{p['muted']}'> Robot speed m/s (0.05–0.5)</span><br>
+<span style='color:{p['text_dim']}'>capture_interval:</span>
+<span style='color:{p['muted']}'> Distance between captures (m)</span><br>
+<span style='color:{p['text_dim']}'>return_home:</span>
+<span style='color:{p['muted']}'> true or false</span><br><br>
+<b style='color:{p['muted']}'>Step actions:</b><br>
+<span style='color:{p['green']}'>forward</span> — drive forward N meters<br>
+<span style='color:{p['green']}'>backward</span> — drive backward N meters<br>
+<span style='color:{p['green']}'>left / right</span> — rotate N degrees<br>
+<span style='color:{p['green']}'>capture_stop</span> — stop auto-capture<br>
+<span style='color:{p['green']}'>return_home</span> — return to start<br><br>
+<b style='color:{p['muted']}'>Step modes:</b><br>
+<span style='color:{p['amber']}'>capture</span> — camera only, no spray<br>
+<span style='color:{p['amber']}'>detect</span>  — camera + spray armed<br>
+<span style='color:{p['amber']}'>navigate</span> — move only, no capture<br><br>
+<b style='color:{p['muted']}'>Example:</b><br>
+<code style='color:{p['text_dim']};background:{p['bg0']};display:block;padding:4px'>
 description: 'Weed plot'<br>
 speed: 0.1<br>
 capture_interval: 0.5<br>
@@ -91,6 +109,7 @@ steps:<br>
 &nbsp;&nbsp;- action: return_home
 </code>
 """
+
 
 TEMPLATE_YAML = """\
 # ABEN Mission File
@@ -126,7 +145,7 @@ class MissionEditorDialog(QDialog):
         self.setWindowTitle(f"Mission Editor — {filename}")
         self.setMinimumSize(860, 560)
         self.resize(960, 640)
-        self.setStyleSheet(DIALOG_STYLE)
+        theme_manager.register_widget(self, _dialog_style)
         self._build_ui(filename, content)
 
     def _build_ui(self, filename, content):
@@ -146,8 +165,8 @@ class MissionEditorDialog(QDialog):
         # ── Splitter: editor (left) | help+quickfields (right) 
         splitter = QSplitter(Qt.Horizontal)
         splitter.setHandleWidth(4)
-        splitter.setStyleSheet(
-            "QSplitter::handle{background:#2a2f3d;}")
+        theme_manager.register_widget(
+            splitter, lambda p: f"QSplitter::handle{{background:{p['border2']};}}")
 
         # LEFT — YAML editor
         left_w = QWidget()
@@ -157,7 +176,7 @@ class MissionEditorDialog(QDialog):
         elay.addWidget(QLabel("YAML Content:"))
 
         self.editor = QTextEdit()
-        self.editor.setStyleSheet(EDITOR_STYLE)
+        theme_manager.register_widget(self.editor, _editor_style)
         self.editor.setPlainText(content)
         self.editor.setTabStopDistance(16)
         self.editor.setAcceptRichText(False)
@@ -165,8 +184,10 @@ class MissionEditorDialog(QDialog):
         elay.addWidget(self.editor, stretch=1)
 
         self.lbl_valid = QLabel("● Ready")
-        self.lbl_valid.setStyleSheet(
-            "color:#00c896;font-family:'Noto Sans',Arial,sans-serif;font-size:10px;")
+        theme_manager.register_widget(
+            self.lbl_valid, lambda p: (
+                f"color:{p['green']};font-family:'Noto Sans',Arial,sans-serif;"
+                f"font-size:10px;"))
         elay.addWidget(self.lbl_valid)
         splitter.addWidget(left_w)
 
@@ -208,27 +229,35 @@ class MissionEditorDialog(QDialog):
         hlay.addLayout(r)
 
         btn_apply = QPushButton("Apply quick fields to YAML")
-        btn_apply.setStyleSheet(
-            "QPushButton{background:#1a2a1a;color:#60c060;"
-            "border:1px solid #2a5a2a;padding:4px;}"
-            "QPushButton:hover{background:#253525;}")
+        theme_manager.register_button(btn_apply, "green")
         btn_apply.clicked.connect(self._apply_quick_fields)
         hlay.addWidget(btn_apply)
 
         hlay.addWidget(QLabel("─" * 28))
 
-        # Help
-        help_lbl = QLabel(HELP_HTML)
+        # Help — HTML content itself depends on the palette (not just
+        # CSS), so it's built once at dialog-open time rather than
+        # wired to theme_manager.on_change(): that hook has no cleanup
+        # mechanism (unlike register_widget/register_button, which use
+        # weakrefs), so a callback registered per-dialog-open would
+        # leak a reference to this widget forever after the dialog
+        # closes. This dialog is short-lived; correct-at-open-time is
+        # the right tradeoff here.
+        help_lbl = QLabel(_help_html(theme_manager.palette()))
         help_lbl.setWordWrap(True)
         help_lbl.setAlignment(Qt.AlignTop)
-        help_lbl.setStyleSheet(
-            "color:#8090a8;font-family:'Noto Sans',Arial,sans-serif;font-size:10px;"
-            "background:#0a0d14;border:1px solid #1a1e2e;"
-            "border-radius:4px;padding:6px;")
+        theme_manager.register_widget(
+            help_lbl, lambda p: (
+                f"color:{p['muted']};font-family:'Noto Sans',Arial,sans-serif;"
+                f"font-size:10px;"
+                f"background:{p['bg0']};border:1px solid {p['input_bg']};"
+                f"border-radius:4px;padding:6px;"))
+
         scr = QScrollArea()
         scr.setWidget(help_lbl)
         scr.setWidgetResizable(True)
-        scr.setStyleSheet("QScrollArea{background:#0a0d14;border:none;}")
+        theme_manager.register_widget(
+            scr, lambda p: f"QScrollArea{{background:{p['bg0']};border:none;}}")
         hlay.addWidget(scr, stretch=1)
         splitter.addWidget(right_w)
 
@@ -239,30 +268,26 @@ class MissionEditorDialog(QDialog):
         # ── Buttons ───────────────────────────────────────────
         btn_row = QHBoxLayout()
 
-        def _btn(text, style, fn):
+        def _btn(text, role, fn):
             b = QPushButton(text)
-            b.setStyleSheet(style)
+            theme_manager.register_button(b, role)
             b.clicked.connect(fn)
             return b
 
-        S_VALIDATE = ("QPushButton{background:#1a2030;color:#8090c0;"
-                      "border:1px solid #2a3050;}"
-                      "QPushButton:hover{background:#2a3040;}")
-        S_SAVE     = ("QPushButton{background:#1a2a1a;color:#60c060;"
-                      "border:1px solid #2a5a2a;}"
-                      "QPushButton:hover{background:#253525;}")
-        S_SYNC     = ("QPushButton{background:#1a2a3a;color:#60a0d0;"
-                      "border:1px solid #2a4a6a;}"
-                      "QPushButton:hover{background:#253545;}")
-        S_CLOSE    = ("QPushButton{background:#1a1a1a;color:#8090a8;"
-                      "border:1px solid #2a2f3d;}"
-                      "QPushButton:hover{background:#252525;}")
-
-        btn_row.addWidget(_btn("✓ Validate",            S_VALIDATE, self._validate))
-        btn_row.addWidget(_btn("💾 Save",               S_SAVE,     self._save))
-        btn_row.addWidget(_btn("💾⇅ Save & Sync Husky", S_SYNC,     self._save_and_sync))
+        btn_row.addWidget(_btn("✓ Validate",            "dim_blue", self._validate))
+        btn_row.addWidget(_btn("💾 Save",               "green",    self._save))
+        btn_row.addWidget(_btn("💾⇅ Save & Sync Husky", "blue",     self._save_and_sync))
         btn_row.addStretch()
-        btn_row.addWidget(_btn("✕ Close",               S_CLOSE,    self.reject))
+        btn_close = QPushButton("✕ Close")
+        theme_manager.register_widget(
+            btn_close, lambda p: (
+                f"QPushButton{{background:{p['bg2']};color:{p['muted']};"
+                f"border:1px solid {p['border2']};border-radius:4px;"
+                f"padding:6px 14px;font-family:'Noto Sans',Arial,sans-serif;"
+                f"font-size:11px;}}"
+                f"QPushButton:hover{{background:{p['btn_hover']};color:{p['text']};}}"))
+        btn_close.clicked.connect(self.reject)
+        btn_row.addWidget(btn_close)
         lay.addLayout(btn_row)
 
     # ── Helpers ───────────────────────────────────────────────
@@ -272,13 +297,17 @@ class MissionEditorDialog(QDialog):
             import yaml
             yaml.safe_load(self.editor.toPlainText())
             self.lbl_valid.setText("● YAML valid")
-            self.lbl_valid.setStyleSheet(
-                "color:#00c896;font-family:'Noto Sans',Arial,sans-serif;font-size:10px;")
+            theme_manager.register_widget(
+                self.lbl_valid, lambda p: (
+                    f"color:{p['green']};font-family:'Noto Sans',Arial,sans-serif;"
+                    f"font-size:10px;"))
         except Exception as e:
             short = str(e)[:90]
             self.lbl_valid.setText(f"✗ {short}")
-            self.lbl_valid.setStyleSheet(
-                "color:#e84545;font-family:'Noto Sans',Arial,sans-serif;font-size:10px;")
+            theme_manager.register_widget(
+                self.lbl_valid, lambda p: (
+                    f"color:{p['red']};font-family:'Noto Sans',Arial,sans-serif;"
+                    f"font-size:10px;"))
 
     def _validate(self):
         try:
@@ -364,8 +393,10 @@ class MissionEditorDialog(QDialog):
             self._log(f"Mission saved: {name}", "ok")
             self._refresh()
             self.lbl_valid.setText(f"● Saved: {name}")
-            self.lbl_valid.setStyleSheet(
-                "color:#00c896;font-family:'Noto Sans',Arial,sans-serif;font-size:10px;")
+            theme_manager.register_widget(
+                self.lbl_valid, lambda p: (
+                    f"color:{p['green']};font-family:'Noto Sans',Arial,sans-serif;"
+                    f"font-size:10px;"))
             return True
         except Exception as e:
             QMessageBox.critical(self, "Save Error", str(e))
