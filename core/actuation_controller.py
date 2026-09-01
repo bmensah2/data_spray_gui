@@ -230,6 +230,18 @@ class ActuationController:
             self.gantry.send_command("pump off")
         self._pump_on = False
 
+        # Wait for the watchdog thread to actually exit rather than
+        # returning while it's still mid-poll — makes shutdown
+        # deterministic and keeps its exit log line from leaking into
+        # whatever runs next (matters most when creating/stopping many
+        # controllers back-to-back, e.g. in tests).
+        if self._estop_thread is not None and self._estop_thread.is_alive():
+            self._estop_thread.join(timeout=1.0)
+            if self._estop_thread.is_alive():
+                logging.warning(
+                    "EStop monitor thread did not exit within 1s of stop()"
+                )
+
         logging.info(
             f"ActuationController stopped | "
             f"total sprays: {self._total_sprays} | "
