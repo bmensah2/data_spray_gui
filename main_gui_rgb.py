@@ -30,8 +30,8 @@ from PyQt5.QtWidgets import (
 )
 from PyQt5.QtCore import Qt, QTimer
 
-from gui.style import LED, BTN_ESTOP, _divider, _muted
-from gui.theme_manager import theme_manager
+from gui.style import LED, _divider, _muted
+from gui.theme_manager import theme_manager, _darken, _lighten
 from gui.shared_log import UnifiedLog
 from gui.keyboard_nav import KeyboardNav
 from gui.panels.dual_camera_panel import DualCameraPanel as CameraPanel
@@ -132,18 +132,18 @@ class MainWindow(QMainWindow):
 
         # ── Main tab widget ───────────────────────────────────
         self.main_tabs = QTabWidget()
-        self.main_tabs.setStyleSheet("""
-            QTabBar::tab {
-                padding: 8px 20px;
-                font-size: 11px;
-                min-width: 140px;
-            }
-            QTabBar::tab:selected {
-                color: #e8eaf0;
-                border-color: #4a9eff;
-                font-weight: bold;
-            }
-        """)
+        theme_manager.register_widget(
+            self.main_tabs, lambda p: (
+                "QTabBar::tab {"
+                "padding: 8px 20px;"
+                "font-size: 11px;"
+                "min-width: 140px;"
+                "}"
+                f"QTabBar::tab:selected {{"
+                f"color: {p['text']};"
+                f"border-color: {p['blue']};"
+                f"font-weight: bold;"
+                f"}}"))
 
         # Build tabs — pass shared panels
         self.tab1 = CollectionTab(
@@ -213,24 +213,26 @@ class MainWindow(QMainWindow):
         r1lay.setSpacing(10)
 
         title = QLabel("ABEN  DUAL  RGB  IMAGING  SYSTEM  v1.0")
-        title.setStyleSheet(
-            "color:#e8eaf0;font-size:15px;font-weight:bold;"
-            "font-family:'Noto Sans',Arial,sans-serif;letter-spacing:3px;")
+        theme_manager.register_widget(
+            title, lambda p: (
+                f"color:{p['text']};font-size:15px;font-weight:bold;"
+                f"font-family:'Noto Sans',Arial,sans-serif;letter-spacing:3px;"))
         r1lay.addWidget(title)
         r1lay.addStretch()
 
-        for led_attr, lbl_text, color in [
-            ("led_gantry", "GANTRY", "#00c896"),
-            ("led_camera", "CAMERA", "#4ab4ff"),
-            ("led_detect", "DETECT", "#f5a623"),
-            ("led_nav",    "NAV",    "#b060d0"),
+        for led_attr, lbl_text, palette_key in [
+            ("led_gantry", "GANTRY", "green"),
+            ("led_camera", "CAMERA", "blue"),
+            ("led_detect", "DETECT", "amber"),
+            ("led_nav",    "NAV",    "purple"),
         ]:
             led = LED(12)
             lbl = QLabel(lbl_text)
-            lbl.setStyleSheet(
-                f"color:{color};font-size:10px;"
-                f"font-family:'Noto Sans',Arial,sans-serif;font-weight:bold;"
-                f"margin-right:6px;")
+            theme_manager.register_widget(
+                lbl, lambda p, k=palette_key: (
+                    f"color:{p[k]};font-size:10px;"
+                    f"font-family:'Noto Sans',Arial,sans-serif;font-weight:bold;"
+                    f"margin-right:6px;"))
             r1lay.addWidget(led)
             r1lay.addWidget(lbl)
             setattr(self, led_attr, led)
@@ -238,14 +240,16 @@ class MainWindow(QMainWindow):
         # RealSense popup button
         self._rs_window = None
         rs_btn = QPushButton("📷  Depth Cam")
-        rs_btn.setStyleSheet(
-            "QPushButton{background:#1a2a3a;color:#60c0ff;"
-            "border:1px solid #2a5a8a;border-radius:4px;"
-            "padding:4px 8px;font-family:'Noto Sans',Arial,sans-serif;"
-            "font-size:10px;font-weight:bold;}"
-            "QPushButton:hover{background:#2a3a4a;}"
-            "QPushButton:disabled{background:#0a1020;"
-            "color:#304050;border-color:#1a2030;}")
+        theme_manager.register_widget(
+            rs_btn, lambda p: (
+                f"QPushButton{{background:{_darken(p['blue'],55)};"
+                f"color:{_lighten(p['blue'],15)};"
+                f"border:1px solid {_darken(p['blue'],30)};border-radius:4px;"
+                f"padding:4px 8px;font-family:'Noto Sans',Arial,sans-serif;"
+                f"font-size:10px;font-weight:bold;}}"
+                f"QPushButton:hover{{background:{_darken(p['blue'],40)};}}"
+                f"QPushButton:disabled{{background:{p['disabled_bg']};"
+                f"color:{p['disabled_text']};border-color:{p['disabled_bg']};}}"))
         rs_btn.setMinimumHeight(30)
         rs_btn.setMinimumWidth(110)
         rs_btn.setEnabled(REALSENSE_AVAILABLE)
@@ -257,7 +261,7 @@ class MainWindow(QMainWindow):
         r1lay.addWidget(rs_btn)
 
         estop = QPushButton("⚡  E-STOP")
-        estop.setStyleSheet(BTN_ESTOP)
+        theme_manager.register_button(estop, "estop")
         estop.setMinimumWidth(110)
         estop.setMinimumHeight(30)
         estop.clicked.connect(self._global_estop)
@@ -266,7 +270,8 @@ class MainWindow(QMainWindow):
 
         # ── Row 2: Arduino connection bar ─────────────────────
         row2 = QWidget()
-        row2.setStyleSheet("background-color:#0a1020;")
+        theme_manager.register_widget(
+            row2, lambda p: f"background-color:{p['bg0']};")
         row2.setFixedHeight(80)
         r2lay = QHBoxLayout(row2)
         r2lay.setContentsMargins(10, 4, 10, 4)
@@ -274,9 +279,10 @@ class MainWindow(QMainWindow):
 
         # Warning icon + prompt
         self.arduino_warn = QLabel("⚠  Arduino not connected — connect to enable Gantry, Pump and Nozzles")
-        self.arduino_warn.setStyleSheet(
-            "color:#f5a623;font-size:10px;"
-            "font-family:'Noto Sans',Arial,sans-serif;font-weight:bold;")
+        theme_manager.register_widget(
+            self.arduino_warn, lambda p: (
+                f"color:{p['amber']};font-size:10px;"
+                f"font-family:'Noto Sans',Arial,sans-serif;font-weight:bold;"))
         r2lay.addWidget(self.arduino_warn)
         r2lay.addStretch()
 
@@ -285,34 +291,39 @@ class MainWindow(QMainWindow):
         self.hdr_port_combo = QComboBox()
         self.hdr_port_combo.setMinimumWidth(120)
         self.hdr_port_combo.setFixedHeight(26)
-        self.hdr_port_combo.setStyleSheet(
-            "QComboBox{background:#1a2030;color:#e8eaf0;"
-            "border:1px solid #3a4055;border-radius:3px;"
-            "font-family:'Noto Sans',Arial,sans-serif;font-size:10px;}"
-            "QComboBox::drop-down{border:none;width:16px;}"
-            "QComboBox QAbstractItemView{background:#1a2030;"
-            "color:#e8eaf0;border:1px solid #3a4055;}")
+        theme_manager.register_widget(
+            self.hdr_port_combo, lambda p: (
+                f"QComboBox{{background:{p['input_bg']};color:{p['text']};"
+                f"border:1px solid {p['border']};border-radius:3px;"
+                f"font-family:'Noto Sans',Arial,sans-serif;font-size:10px;}}"
+                f"QComboBox::drop-down{{border:none;width:16px;}}"
+                f"QComboBox QAbstractItemView{{background:{p['input_bg']};"
+                f"color:{p['text']};border:1px solid {p['border']};}}"))
         r2lay.addWidget(self.hdr_port_combo)
 
         # Refresh ports button
         btn_refresh = QPushButton("↻")
         btn_refresh.setFixedWidth(28)
         btn_refresh.setFixedHeight(26)
-        btn_refresh.setStyleSheet(
-            "QPushButton{background:#1a2030;color:#8090a8;"
-            "border:1px solid #3a4055;border-radius:3px;}"
-            "QPushButton:hover{background:#2a3040;color:#e8eaf0;}")
+        theme_manager.register_widget(
+            btn_refresh, lambda p: (
+                f"QPushButton{{background:{p['input_bg']};color:{p['muted']};"
+                f"border:1px solid {p['border']};border-radius:3px;}}"
+                f"QPushButton:hover{{background:{p['btn_hover']};"
+                f"color:{p['text']};}}"))
         btn_refresh.clicked.connect(self._refresh_arduino_ports)
         r2lay.addWidget(btn_refresh)
 
         # Connect/Disconnect button
         self.hdr_btn_connect = QPushButton("🔌  CONNECT ARDUINO")
-        self.hdr_btn_connect.setStyleSheet(
-            "QPushButton{background:#005a30;color:#00ff88;"
-            "border:1px solid #00c896;border-radius:4px;"
-            "padding:4px 12px;font-family:'Noto Sans',Arial,sans-serif;"
-            "font-size:10px;font-weight:bold;}"
-            "QPushButton:hover{background:#007040;}")
+        theme_manager.register_widget(
+            self.hdr_btn_connect, lambda p: (
+                f"QPushButton{{background:{_darken(p['green'],55)};"
+                f"color:{_lighten(p['green'],20)};"
+                f"border:1px solid {p['green']};border-radius:4px;"
+                f"padding:4px 12px;font-family:'Noto Sans',Arial,sans-serif;"
+                f"font-size:10px;font-weight:bold;}}"
+                f"QPushButton:hover{{background:{_darken(p['green'],40)};}}"))
         self.hdr_btn_connect.setFixedHeight(26)
         self.hdr_btn_connect.clicked.connect(self._toggle_arduino)
         r2lay.addWidget(self.hdr_btn_connect)
@@ -451,55 +462,61 @@ class MainWindow(QMainWindow):
             # ── Status LEDs ───────────────────────────────────
             self.led_gantry.set_state(arduino_connected)
             self.led_camera.set_state(
-                self.camera.is_acquiring, color_on="#4ab4ff")
+                self.camera.is_acquiring, role="blue")
             self.led_detect.set_state(
-                self.tab2.detect.is_armed, color_on="#f5a623")
+                self.tab2.detect.is_armed, role="amber")
             bridge = self.tab2.detect.ros_bridge
             nav_connected = (bridge is not None and
                              bridge.is_connected())
-            self.led_nav.set_state(nav_connected, color_on="#b060d0")
+            self.led_nav.set_state(nav_connected, role="purple")
             if nav_connected:
                 self.nav_collection.set_ros_bridge(lambda: bridge)
                 self.nav_detection.set_ros_bridge(lambda: bridge)
 
             # ── Arduino connection bar ────────────────────────
             self.hdr_arduino_led.set_state(
-                arduino_connected, color_on="#00c896")
+                arduino_connected, role="green")
             if arduino_connected:
                 port = self.hdr_port_combo.currentText()
                 mode = self.gantry.ctrl.state.firmware_mode
                 if mode == "detection":
                     mode_str = "DETECTION firmware  —  Pump + Nozzles active  |  Stepper HOLDING"
-                    col = "#4ab4ff"
+                    palette_key = "blue"
                 else:
                     mode_str = "UNIFIED firmware  —  Full Gantry + Pump + Nozzles active"
-                    col = "#00c896"
+                    palette_key = "green"
                 self.arduino_warn.setText(
                     f"✓  Arduino connected on {port}  —  {mode_str}")
-                self.arduino_warn.setStyleSheet(
-                    f"color:{col};font-size:10px;"
-                    f"font-family:'Noto Sans',Arial,sans-serif;font-weight:bold;")
+                theme_manager.register_widget(
+                    self.arduino_warn, lambda p, k=palette_key: (
+                        f"color:{p[k]};font-size:10px;"
+                        f"font-family:'Noto Sans',Arial,sans-serif;font-weight:bold;"))
                 self.hdr_btn_connect.setText("🔌  DISCONNECT")
-                self.hdr_btn_connect.setStyleSheet(
-                    "QPushButton{background:#3a1515;color:#ff6060;"
-                    "border:1px solid #971c1c;border-radius:4px;"
-                    "padding:4px 12px;font-family:'Noto Sans',Arial,sans-serif;"
-                    "font-size:10px;font-weight:bold;}"
-                    "QPushButton:hover{background:#5a1515;}")
+                theme_manager.register_widget(
+                    self.hdr_btn_connect, lambda p: (
+                        f"QPushButton{{background:{_darken(p['red'],55)};"
+                        f"color:{_lighten(p['red'],10)};"
+                        f"border:1px solid {p['red']};border-radius:4px;"
+                        f"padding:4px 12px;font-family:'Noto Sans',Arial,sans-serif;"
+                        f"font-size:10px;font-weight:bold;}}"
+                        f"QPushButton:hover{{background:{_darken(p['red'],40)};}}"))
             else:
                 self.arduino_warn.setText(
                     "⚠  Arduino not connected"
                     "  —  connect to enable Gantry, Pump and Nozzles")
-                self.arduino_warn.setStyleSheet(
-                    "color:#f5a623;font-size:10px;"
-                    "font-family:'Noto Sans',Arial,sans-serif;font-weight:bold;")
+                theme_manager.register_widget(
+                    self.arduino_warn, lambda p: (
+                        f"color:{p['amber']};font-size:10px;"
+                        f"font-family:'Noto Sans',Arial,sans-serif;font-weight:bold;"))
                 self.hdr_btn_connect.setText("🔌  CONNECT ARDUINO")
-                self.hdr_btn_connect.setStyleSheet(
-                    "QPushButton{background:#005a30;color:#00ff88;"
-                    "border:1px solid #00c896;border-radius:4px;"
-                    "padding:4px 12px;font-family:'Noto Sans',Arial,sans-serif;"
-                    "font-size:10px;font-weight:bold;}"
-                    "QPushButton:hover{background:#007040;}")
+                theme_manager.register_widget(
+                    self.hdr_btn_connect, lambda p: (
+                        f"QPushButton{{background:{_darken(p['green'],55)};"
+                        f"color:{_lighten(p['green'],20)};"
+                        f"border:1px solid {p['green']};border-radius:4px;"
+                        f"padding:4px 12px;font-family:'Noto Sans',Arial,sans-serif;"
+                        f"font-size:10px;font-weight:bold;}}"
+                        f"QPushButton:hover{{background:{_darken(p['green'],40)};}}"))
         except Exception:
             pass
 
@@ -508,9 +525,10 @@ class MainWindow(QMainWindow):
         lay = QVBoxLayout(w)
         lay.setContentsMargins(20, 20, 20, 20)
         lbl = QLabel(f"{name} — Reserved for future expansion")
-        lbl.setStyleSheet(
-            "color:#3a4055;font-size:14px;"
-            "font-family:'Noto Sans',Arial,sans-serif;")
+        theme_manager.register_widget(
+            lbl, lambda p: (
+                f"color:{p['dim']};font-size:14px;"
+                f"font-family:'Noto Sans',Arial,sans-serif;"))
         lbl.setAlignment(Qt.AlignCenter)
         lay.addStretch()
         lay.addWidget(lbl)
