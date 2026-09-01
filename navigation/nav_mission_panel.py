@@ -77,7 +77,7 @@ class MissionPanel(QWidget):
 
         self.mission_desc = QLabel("—")
         self.mission_desc.setStyleSheet(
-            "color:#8090a8;font-size:9px;font-family:Courier New;")
+            "color:#8090a8;font-size:9px;font-family:'Noto Sans',Arial,sans-serif;")
         self.mission_desc.setWordWrap(True)
         sl.addWidget(self.mission_desc)
         lay.addWidget(sel_grp)
@@ -87,7 +87,7 @@ class MissionPanel(QWidget):
         il = QVBoxLayout(info_grp)
         self.mission_info = QLabel("No mission loaded")
         self.mission_info.setStyleSheet(
-            "color:#a0b0c0;font-size:9px;font-family:Courier New;")
+            "color:#a0b0c0;font-size:9px;font-family:'Noto Sans',Arial,sans-serif;")
         self.mission_info.setWordWrap(True)
         il.addWidget(self.mission_info)
         lay.addWidget(info_grp)
@@ -102,7 +102,7 @@ class MissionPanel(QWidget):
         pl.addWidget(self.progress_bar)
         self.step_label = QLabel("Step: —")
         self.step_label.setStyleSheet(
-            "color:#8090a8;font-size:9px;font-family:Courier New;")
+            "color:#8090a8;font-size:9px;font-family:'Noto Sans',Arial,sans-serif;")
         pl.addWidget(self.step_label)
         lay.addWidget(prog_grp)
 
@@ -115,7 +115,7 @@ class MissionPanel(QWidget):
         self.mission_log.setFixedHeight(80)
         self.mission_log.setStyleSheet(
             "background:#0a0d14;color:#8090a8;"
-            "font-family:Courier New;font-size:9px;border:none;")
+            "font-family:'Noto Sans',Arial,sans-serif;font-size:9px;border:none;")
         ll.addWidget(self.mission_log)
         lay.addWidget(log_grp)
 

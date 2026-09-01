@@ -312,7 +312,7 @@ class KeyboardNav(QObject):
         theme_manager.register_widget(
             spd, lambda p: (
                 f"color:{p['dim']};font-size:9px;"
-                f"font-family:Courier New;"))
+                f"font-family:'Noto Sans',Arial,sans-serif;"))
         self._speed_lbl = spd
         rv.addWidget(spd)
 
@@ -330,7 +330,7 @@ class KeyboardNav(QObject):
         theme_manager.register_widget(
             hint, lambda p: (
                 f"color:{p['dim']};font-size:8px;"
-                f"font-family:Courier New;"))
+                f"font-family:'Noto Sans',Arial,sans-serif;"))
         rv.addWidget(hint)
         outer_lay.addWidget(right)
 

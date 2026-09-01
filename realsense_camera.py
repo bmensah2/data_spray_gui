@@ -555,7 +555,7 @@ if QT_AVAILABLE:
                     "not found — capture/recording disabled")
                 theme_manager.register_widget(
                     warn, lambda p: (
-                        f"color:{p['amber']};font-family:Courier New;"
+                        f"color:{p['amber']};font-family:'Noto Sans',Arial,sans-serif;"
                         f"font-size:9px;"))
                 llay.addWidget(warn)
             llay.addStretch()
@@ -628,7 +628,7 @@ if QT_AVAILABLE:
             theme_manager.register_widget(
                 future_lbl, lambda p: (
                     f"color:{p['border']};font-size:11px;"
-                    f"font-family:Courier New;"))
+                    f"font-family:'Noto Sans',Arial,sans-serif;"))
             future_lbl.setAlignment(Qt.AlignCenter)
             fg.addStretch()
             fg.addWidget(future_lbl)
@@ -659,12 +659,12 @@ if QT_AVAILABLE:
                 l = QLabel(lb)
                 theme_manager.register_widget(
                     l, lambda p: (
-                        f"color:{p['muted']};font-family:Courier New;"
+                        f"color:{p['muted']};font-family:'Noto Sans',Arial,sans-serif;"
                         f"font-size:9px;"))
                 v = getattr(self, attr)
                 theme_manager.register_widget(
                     v, lambda p: (
-                        f"color:{p['muted2']};font-family:Courier New;"
+                        f"color:{p['muted2']};font-family:'Noto Sans',Arial,sans-serif;"
                         f"font-size:9px;"))
                 ig.addWidget(l, row, 0)
                 ig.addWidget(v, row, 1)
@@ -1006,7 +1006,7 @@ if QT_AVAILABLE:
                         f"Recording: {self._video_rec.session_id}")
                     theme_manager.register_widget(
                         self._lbl_vid_status, lambda p: (
-                            f"color:{p['red']};font-family:Courier New;"
+                            f"color:{p['red']};font-family:'Noto Sans',Arial,sans-serif;"
                             f"font-size:9px;"))
                     self._log(
                         f"Video started: {self._video_rec.session_id} "
@@ -1044,7 +1044,7 @@ if QT_AVAILABLE:
                 self._lbl_vid_status.setText("Not recording")
                 theme_manager.register_widget(
                     self._lbl_vid_status, lambda p: (
-                        f"color:{p['muted']};font-family:Courier New;"
+                        f"color:{p['muted']};font-family:'Noto Sans',Arial,sans-serif;"
                         f"font-size:9px;"))
                 if meta:
                     self._log(
@@ -1224,7 +1224,7 @@ if QT_AVAILABLE:
                     "(Bus 02 cameras-only layout — optimized)")
                 theme_manager.register_widget(
                     mode_lbl, lambda p: (
-                        f"color:{p['amber']};font-family:Courier New;"
+                        f"color:{p['amber']};font-family:'Noto Sans',Arial,sans-serif;"
                         f"font-size:9px;"))
                 mb.addWidget(mode_lbl)
                 mb.addStretch()
@@ -1238,7 +1238,7 @@ if QT_AVAILABLE:
                     "✓ Standalone mode: 640×480 @ 30fps")
                 theme_manager.register_widget(
                     mode_lbl, lambda p: (
-                        f"color:{p['green']};font-family:Courier New;"
+                        f"color:{p['green']};font-family:'Noto Sans',Arial,sans-serif;"
                         f"font-size:9px;"))
                 mb.addWidget(mode_lbl)
             lay.addWidget(mode_bar)

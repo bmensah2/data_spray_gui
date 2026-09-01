@@ -278,7 +278,7 @@ class CameraSettingsWidget(QWidget):
         lay.addWidget(_divider())
         preset_lbl = QLabel("Quick Presets:")
         preset_lbl.setStyleSheet(
-            "color:#8090a8;font-size:9px;font-family:Courier New;")
+            "color:#8090a8;font-size:9px;font-family:'Noto Sans',Arial,sans-serif;")
         lay.addWidget(preset_lbl)
 
         preset_row = QHBoxLayout()
@@ -287,7 +287,7 @@ class CameraSettingsWidget(QWidget):
         btn_outdoor.setStyleSheet(
             "QPushButton{background:#1a3a2a;color:#60d090;"
             "border:1px solid #2a6a4a;border-radius:4px;"
-            "padding:5px 10px;font-family:Courier New;font-size:10px;}"
+            "padding:5px 10px;font-family:'Noto Sans',Arial,sans-serif;font-size:10px;}"
             "QPushButton:hover{background:#2a4a3a;}")
         btn_outdoor.setToolTip(
             "Outdoor / direct sunlight\n"
@@ -299,7 +299,7 @@ class CameraSettingsWidget(QWidget):
         btn_cloudy.setStyleSheet(
             "QPushButton{background:#1a2a3a;color:#80b0d0;"
             "border:1px solid #2a4a6a;border-radius:4px;"
-            "padding:5px 10px;font-family:Courier New;font-size:10px;}"
+            "padding:5px 10px;font-family:'Noto Sans',Arial,sans-serif;font-size:10px;}"
             "QPushButton:hover{background:#2a3a4a;}")
         btn_cloudy.setToolTip(
             "Overcast / cloudy / shade\n"
@@ -311,7 +311,7 @@ class CameraSettingsWidget(QWidget):
         btn_indoor.setStyleSheet(
             "QPushButton{background:#2a2a1a;color:#d0c060;"
             "border:1px solid #5a5a2a;border-radius:4px;"
-            "padding:5px 10px;font-family:Courier New;font-size:10px;}"
+            "padding:5px 10px;font-family:'Noto Sans',Arial,sans-serif;font-size:10px;}"
             "QPushButton:hover{background:#3a3a2a;}")
         btn_indoor.setToolTip(
             "Indoor lab / bench testing\n"
@@ -602,19 +602,19 @@ class AcquisitionPanelRGB(QWidget):
         sg.addWidget(_muted("Left device:"),  0, 0)
         self.lbl_left_dev = QLabel("—")
         self.lbl_left_dev.setStyleSheet(
-            "color:#60c0a0;font-size:9px;font-family:Courier New;")
+            "color:#60c0a0;font-size:9px;font-family:'Noto Sans',Arial,sans-serif;")
         sg.addWidget(self.lbl_left_dev, 0, 1)
 
         sg.addWidget(_muted("Right device:"), 1, 0)
         self.lbl_right_dev = QLabel("—")
         self.lbl_right_dev.setStyleSheet(
-            "color:#60c0a0;font-size:9px;font-family:Courier New;")
+            "color:#60c0a0;font-size:9px;font-family:'Noto Sans',Arial,sans-serif;")
         sg.addWidget(self.lbl_right_dev, 1, 1)
 
         sg.addWidget(_muted("Resolution:"),   2, 0)
         self.lbl_res = QLabel("1920 × 1080  @  30fps  MJPG")
         self.lbl_res.setStyleSheet(
-            "color:#8090a8;font-size:9px;font-family:Courier New;")
+            "color:#8090a8;font-size:9px;font-family:'Noto Sans',Arial,sans-serif;")
         sg.addWidget(self.lbl_res, 2, 1)
 
         lay.addWidget(status_grp)
@@ -699,7 +699,7 @@ class AcquisitionPanelRGB(QWidget):
         self.lbl_folder = QLabel(str(BASE_PATH))
         self.lbl_folder.setStyleSheet(
             "color:#6080a0;font-size:9px;"
-            "font-family:Courier New;")
+            "font-family:'Noto Sans',Arial,sans-serif;")
         self.lbl_folder.setWordWrap(True)
         folder_row.addWidget(self.lbl_folder, stretch=1)
         btn_browse = QPushButton("Browse")
@@ -769,7 +769,7 @@ class AcquisitionPanelRGB(QWidget):
         self.lbl_last_saved = QLabel("—")
         self.lbl_last_saved.setStyleSheet(
             "color:#6080a0;font-size:9px;"
-            "font-family:Courier New;")
+            "font-family:'Noto Sans',Arial,sans-serif;")
         self.lbl_last_saved.setWordWrap(True)
         lay.addWidget(self.lbl_last_saved)
 
@@ -884,7 +884,7 @@ class AcquisitionPanelRGB(QWidget):
         self.lbl_vid_status = QLabel("Not recording")
         self.lbl_vid_status.setStyleSheet(
             "color:#8090a8;font-size:10px;"
-            "font-family:Courier New;")
+            "font-family:'Noto Sans',Arial,sans-serif;")
         lay.addWidget(self.lbl_vid_status)
 
         vid_btn_row = QHBoxLayout()
@@ -1177,7 +1177,7 @@ class AcquisitionPanelRGB(QWidget):
             f"Recording  —  {ts}  [{', '.join(self._vid_writers)}]")
         self.lbl_vid_status.setStyleSheet(
             "color:#e84545;font-size:10px;"
-            "font-family:Courier New;font-weight:bold;")
+            "font-family:'Noto Sans',Arial,sans-serif;font-weight:bold;")
         self.shared_log.log(
             "CAMERA",
             f"Video recording started: {list(self._vid_writers)}",
@@ -1214,7 +1214,7 @@ class AcquisitionPanelRGB(QWidget):
         self.lbl_vid_status.setText("Not recording")
         self.lbl_vid_status.setStyleSheet(
             "color:#8090a8;font-size:10px;"
-            "font-family:Courier New;")
+            "font-family:'Noto Sans',Arial,sans-serif;")
         self.shared_log.log(
             "CAMERA", "Video recording stopped", "ok")
 

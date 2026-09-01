@@ -255,7 +255,7 @@ class DetectionPanelRGB(QWidget):
                 "zone_manager_rgb.py are in core/."
             )
             lbl.setStyleSheet(
-                "color:#f5a623;font-family:Courier New;"
+                "color:#f5a623;font-family:'Noto Sans',Arial,sans-serif;"
                 "font-size:10px;")
             lbl.setWordWrap(True)
             lay.addWidget(lbl)
@@ -304,7 +304,7 @@ class DetectionPanelRGB(QWidget):
         g.addWidget(_muted("Static test:"), 2, 0)
         self.chk_static = _QCB("Bypass speed check (bench/indoor test)")
         self.chk_static.setStyleSheet(
-            "color:#f5a623;font-family:Courier New;font-size:9px;")
+            "color:#f5a623;font-family:'Noto Sans',Arial,sans-serif;font-size:9px;")
         self.chk_static.setChecked(False)
         self.chk_static.stateChanged.connect(self._on_static_toggle)
         g.addWidget(self.chk_static, 2, 1, 1, 3)
@@ -317,7 +317,7 @@ class DetectionPanelRGB(QWidget):
 
         self.lbl_model = QLabel("No model loaded  (stub mode)")
         self.lbl_model.setStyleSheet(
-            "color:#f5a623;font-family:Courier New;font-size:10px;")
+            "color:#f5a623;font-family:'Noto Sans',Arial,sans-serif;font-size:10px;")
         lay.addWidget(self.lbl_model, stretch=1)
 
         self.btn_load = QPushButton("Load Model")
@@ -352,12 +352,12 @@ class DetectionPanelRGB(QWidget):
             cnt.setAlignment(Qt.AlignCenter)
             cnt.setStyleSheet(
                 "color:#8090a8;font-size:10px;"
-                "font-family:Courier New;")
+                "font-family:'Noto Sans',Arial,sans-serif;")
             dl  = QLabel("--")
             dl.setAlignment(Qt.AlignCenter)
             dl.setStyleSheet(
                 "color:#6070a0;font-size:9px;"
-                "font-family:Courier New;")
+                "font-family:'Noto Sans',Arial,sans-serif;")
             dl.setWordWrap(True)
             zl.addWidget(led, alignment=Qt.AlignCenter)
             zl.addWidget(cnt)
@@ -374,7 +374,7 @@ class DetectionPanelRGB(QWidget):
             lb = QLabel(f"N{i+1}")
             lb.setStyleSheet(
                 "color:#8090a8;font-size:11px;"
-                "font-family:Courier New;")
+                "font-family:'Noto Sans',Arial,sans-serif;")
             noz_row.addWidget(lb)
             noz_row.addWidget(nl)
             self._nozzle_leds.append(nl)
@@ -402,7 +402,7 @@ class DetectionPanelRGB(QWidget):
         self.lbl_last_event = QLabel("No spray events yet")
         self.lbl_last_event.setStyleSheet(
             "color:#8090a8;font-size:10px;"
-            "font-family:Courier New;")
+            "font-family:'Noto Sans',Arial,sans-serif;")
         self.lbl_last_event.setWordWrap(True)
         lay.addWidget(self.lbl_last_event)
         return grp
@@ -436,7 +436,7 @@ class DetectionPanelRGB(QWidget):
 
         self.lbl_pump_state = QLabel("PUMP  DISABLED")
         self.lbl_pump_state.setStyleSheet(
-            "color:#e84545;font-family:Courier New;"
+            "color:#e84545;font-family:'Noto Sans',Arial,sans-serif;"
             "font-size:10px;font-weight:bold;")
         toggle_row.addWidget(self.lbl_pump_state)
         toggle_row.addStretch()
@@ -465,7 +465,7 @@ class DetectionPanelRGB(QWidget):
         self.spn_prime.setStyleSheet(
             "QSpinBox{background:#1a1e2e;color:#e8eaf0;"
             "border:1px solid #3a4055;border-radius:3px;"
-            "font-family:Courier New;font-size:10px;padding:2px;}")
+            "font-family:'Noto Sans',Arial,sans-serif;font-size:10px;padding:2px;}")
         prime_row.addWidget(self.spn_prime)
         prime_row.addStretch()
 
@@ -479,7 +479,7 @@ class DetectionPanelRGB(QWidget):
 
         self.lbl_prime_status = QLabel("")
         self.lbl_prime_status.setStyleSheet(
-            "color:#4a9eff;font-size:9px;font-family:Courier New;")
+            "color:#4a9eff;font-size:9px;font-family:'Noto Sans',Arial,sans-serif;")
         lay.addWidget(self.lbl_prime_status)
 
         return grp
@@ -493,7 +493,7 @@ class DetectionPanelRGB(QWidget):
         self.btn_purge.setStyleSheet(
             "QPushButton{background-color:#5a3a00;color:#f5a623;"
             "border:1px solid #f5a623;border-radius:4px;"
-            "padding:6px;font-family:'Courier New';"
+            "padding:6px;font-family:'Noto Sans',Arial,sans-serif;"
             "font-size:10px;font-weight:bold;}"
             "QPushButton:pressed{background-color:#f5a623;color:#000;}")
         self.btn_purge.setMinimumHeight(32)
@@ -531,12 +531,12 @@ class DetectionPanelRGB(QWidget):
         if self._engine.stub_mode:
             self.lbl_model.setText("No model loaded  (stub mode)")
             self.lbl_model.setStyleSheet(
-                "color:#f5a623;font-family:Courier New;font-size:10px;")
+                "color:#f5a623;font-family:'Noto Sans',Arial,sans-serif;font-size:10px;")
         else:
             model_path = cfg.model.get_model_path(cfg.session.detection_mode)
             self.lbl_model.setText(f"✓  {model_path.name}")
             self.lbl_model.setStyleSheet(
-                "color:#00c896;font-family:Courier New;font-size:10px;")
+                "color:#00c896;font-family:'Noto Sans',Arial,sans-serif;font-size:10px;")
 
         # ROSBridge — receives Husky odometry via UDP.
         # Uses its own NetworkConfig (from detection_config, not RGBConfig).
@@ -749,7 +749,7 @@ class DetectionPanelRGB(QWidget):
             if self._engine.ready:
                 self.lbl_model.setText(f"Model: {_P(path).name}")
                 self.lbl_model.setStyleSheet(
-                    "color:#00c896;font-family:Courier New;"
+                    "color:#00c896;font-family:'Noto Sans',Arial,sans-serif;"
                     "font-size:10px;")
                 self.shared_log.log(
                     "DETECT", f"Model loaded: {_P(path).name}", "ok")
@@ -930,12 +930,12 @@ class DetectionPanelRGB(QWidget):
                         d.class_name for d in dets[:2]))
                     dl.setStyleSheet(
                         "color:#00c896;font-size:9px;"
-                        "font-family:Courier New;")
+                        "font-family:'Noto Sans',Arial,sans-serif;")
                 else:
                     dl.setText("--")
                     dl.setStyleSheet(
                         "color:#6070a0;font-size:9px;"
-                        "font-family:Courier New;")
+                        "font-family:'Noto Sans',Arial,sans-serif;")
 
             for i, nl in enumerate(self._nozzle_leds):
                 nl.set_state(spray_states[i],
@@ -1112,7 +1112,7 @@ class DetectionPanelRGB(QWidget):
             f"conf={conf:.2f} | {ts}")
         self.lbl_last_event.setStyleSheet(
             "color:#00c896;font-size:10px;"
-            "font-family:Courier New;")
+            "font-family:'Noto Sans',Arial,sans-serif;")
         self.shared_log.log(
             "DETECT",
             f"Spray: {event.zone_name} | {names} | {conf:.2f}",
@@ -1187,7 +1187,7 @@ class DetectionPanelRGB(QWidget):
 
             self.lbl_pump_state.setText("PUMP  ENABLED ●")
             self.lbl_pump_state.setStyleSheet(
-                "color:#00c896;font-family:Courier New;"
+                "color:#00c896;font-family:'Noto Sans',Arial,sans-serif;"
                 "font-size:10px;font-weight:bold;")
             self.led_pump.set_state(True, color_on="#00c896")
             self.btn_pump_enable.setText("⛔  DISABLE PUMP")
@@ -1211,7 +1211,7 @@ class DetectionPanelRGB(QWidget):
 
             self.lbl_pump_state.setText("PUMP  DISABLED")
             self.lbl_pump_state.setStyleSheet(
-                "color:#e84545;font-family:Courier New;"
+                "color:#e84545;font-family:'Noto Sans',Arial,sans-serif;"
                 "font-size:10px;font-weight:bold;")
             self.led_pump.set_state(False)
             self.btn_pump_enable.setText("⚡  ENABLE PUMP")

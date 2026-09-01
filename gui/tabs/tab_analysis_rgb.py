@@ -179,7 +179,7 @@ class AnalysisTabRGB(QWidget):
         theme_manager.register_widget(
             self.tbl_events, lambda p: (
                 f"QTableWidget{{background-color:{p['bg0']};color:{p['text_dim']};"
-                f"font-family:'Courier New';font-size:10px;"
+                f"font-family:'Noto Sans',Arial,sans-serif;font-size:10px;"
                 f"gridline-color:{p['border2']};border:1px solid {p['border2']};}}"
                 f"QHeaderView::section{{background-color:{p['bg3']};"
                 f"color:{p['muted']};padding:4px;border:1px solid {p['border2']};"
@@ -202,7 +202,7 @@ class AnalysisTabRGB(QWidget):
             theme_manager.register_widget(
                 lbl, lambda p: (
                     f"color:{p['green']};font-size:10px;"
-                    f"font-family:'Courier New';"))
+                    f"font-family:'Noto Sans',Arial,sans-serif;"))
             gl.addWidget(lbl, row, 1)
             setattr(self, attr, lbl)
 
@@ -226,7 +226,7 @@ class AnalysisTabRGB(QWidget):
         theme_manager.register_widget(
             self.lbl_by_zone, lambda p: (
                 f"color:{p['text_dim']};font-size:10px;"
-                f"font-family:'Courier New';"))
+                f"font-family:'Noto Sans',Arial,sans-serif;"))
         gl.addWidget(self.lbl_by_zone, 0, 1)
 
         gl.addWidget(_muted("By class:"), 1, 0)
@@ -235,7 +235,7 @@ class AnalysisTabRGB(QWidget):
         theme_manager.register_widget(
             self.lbl_by_class, lambda p: (
                 f"color:{p['text_dim']};font-size:10px;"
-                f"font-family:'Courier New';"))
+                f"font-family:'Noto Sans',Arial,sans-serif;"))
         gl.addWidget(self.lbl_by_class, 1, 1)
         return grp
 
@@ -251,7 +251,7 @@ class AnalysisTabRGB(QWidget):
             theme_manager.register_widget(
                 lbl, lambda p: (
                     f"color:{p['text_dim']};font-size:10px;"
-                    f"font-family:'Courier New';"))
+                    f"font-family:'Noto Sans',Arial,sans-serif;"))
             gl.addWidget(lbl, row, 1)
             setattr(self, attr, lbl)
 
@@ -287,7 +287,7 @@ class AnalysisTabRGB(QWidget):
     def _style_label(self, lbl, palette_key, extra=""):
         theme_manager.register_widget(
             lbl, lambda p, k=palette_key, x=extra: (
-                f"color:{p[k]};font-size:10px;font-family:'Courier New';{x}"))
+                f"color:{p[k]};font-size:10px;font-family:'Noto Sans',Arial,sans-serif;{x}"))
 
     # ── Session lifecycle ─────────────────────────────────────
 

@@ -159,7 +159,7 @@ class LogPanel(QWidget):
         theme_manager.register_widget(
             title, lambda p: (
                 f"color:{p['muted2']};font-size:10px;font-weight:bold;"
-                f"font-family:Courier New;letter-spacing:2px;"))
+                f"font-family:'Noto Sans',Arial,sans-serif;letter-spacing:2px;"))
         hdr.addWidget(title)
 
         # Source legend dots
@@ -176,7 +176,7 @@ class LogPanel(QWidget):
             theme_manager.register_widget(
                 lbl, lambda p, role=role: (
                     f"color:{p.get(role, p['muted'])};"
-                    f"font-size:9px;font-family:Courier New;"))
+                    f"font-size:9px;font-family:'Noto Sans',Arial,sans-serif;"))
             hdr.addWidget(lbl)
 
         hdr.addStretch()

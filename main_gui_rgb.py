@@ -215,7 +215,7 @@ class MainWindow(QMainWindow):
         title = QLabel("ABEN  DUAL  RGB  IMAGING  SYSTEM  v1.0")
         title.setStyleSheet(
             "color:#e8eaf0;font-size:15px;font-weight:bold;"
-            "font-family:Courier New;letter-spacing:3px;")
+            "font-family:'Noto Sans',Arial,sans-serif;letter-spacing:3px;")
         r1lay.addWidget(title)
         r1lay.addStretch()
 
@@ -229,7 +229,7 @@ class MainWindow(QMainWindow):
             lbl = QLabel(lbl_text)
             lbl.setStyleSheet(
                 f"color:{color};font-size:10px;"
-                f"font-family:Courier New;font-weight:bold;"
+                f"font-family:'Noto Sans',Arial,sans-serif;font-weight:bold;"
                 f"margin-right:6px;")
             r1lay.addWidget(led)
             r1lay.addWidget(lbl)
@@ -241,7 +241,7 @@ class MainWindow(QMainWindow):
         rs_btn.setStyleSheet(
             "QPushButton{background:#1a2a3a;color:#60c0ff;"
             "border:1px solid #2a5a8a;border-radius:4px;"
-            "padding:4px 8px;font-family:Courier New;"
+            "padding:4px 8px;font-family:'Noto Sans',Arial,sans-serif;"
             "font-size:10px;font-weight:bold;}"
             "QPushButton:hover{background:#2a3a4a;}"
             "QPushButton:disabled{background:#0a1020;"
@@ -276,7 +276,7 @@ class MainWindow(QMainWindow):
         self.arduino_warn = QLabel("⚠  Arduino not connected — connect to enable Gantry, Pump and Nozzles")
         self.arduino_warn.setStyleSheet(
             "color:#f5a623;font-size:10px;"
-            "font-family:Courier New;font-weight:bold;")
+            "font-family:'Noto Sans',Arial,sans-serif;font-weight:bold;")
         r2lay.addWidget(self.arduino_warn)
         r2lay.addStretch()
 
@@ -288,7 +288,7 @@ class MainWindow(QMainWindow):
         self.hdr_port_combo.setStyleSheet(
             "QComboBox{background:#1a2030;color:#e8eaf0;"
             "border:1px solid #3a4055;border-radius:3px;"
-            "font-family:Courier New;font-size:10px;}"
+            "font-family:'Noto Sans',Arial,sans-serif;font-size:10px;}"
             "QComboBox::drop-down{border:none;width:16px;}"
             "QComboBox QAbstractItemView{background:#1a2030;"
             "color:#e8eaf0;border:1px solid #3a4055;}")
@@ -310,7 +310,7 @@ class MainWindow(QMainWindow):
         self.hdr_btn_connect.setStyleSheet(
             "QPushButton{background:#005a30;color:#00ff88;"
             "border:1px solid #00c896;border-radius:4px;"
-            "padding:4px 12px;font-family:Courier New;"
+            "padding:4px 12px;font-family:'Noto Sans',Arial,sans-serif;"
             "font-size:10px;font-weight:bold;}"
             "QPushButton:hover{background:#007040;}")
         self.hdr_btn_connect.setFixedHeight(26)
@@ -478,12 +478,12 @@ class MainWindow(QMainWindow):
                     f"✓  Arduino connected on {port}  —  {mode_str}")
                 self.arduino_warn.setStyleSheet(
                     f"color:{col};font-size:10px;"
-                    f"font-family:Courier New;font-weight:bold;")
+                    f"font-family:'Noto Sans',Arial,sans-serif;font-weight:bold;")
                 self.hdr_btn_connect.setText("🔌  DISCONNECT")
                 self.hdr_btn_connect.setStyleSheet(
                     "QPushButton{background:#3a1515;color:#ff6060;"
                     "border:1px solid #971c1c;border-radius:4px;"
-                    "padding:4px 12px;font-family:Courier New;"
+                    "padding:4px 12px;font-family:'Noto Sans',Arial,sans-serif;"
                     "font-size:10px;font-weight:bold;}"
                     "QPushButton:hover{background:#5a1515;}")
             else:
@@ -492,12 +492,12 @@ class MainWindow(QMainWindow):
                     "  —  connect to enable Gantry, Pump and Nozzles")
                 self.arduino_warn.setStyleSheet(
                     "color:#f5a623;font-size:10px;"
-                    "font-family:Courier New;font-weight:bold;")
+                    "font-family:'Noto Sans',Arial,sans-serif;font-weight:bold;")
                 self.hdr_btn_connect.setText("🔌  CONNECT ARDUINO")
                 self.hdr_btn_connect.setStyleSheet(
                     "QPushButton{background:#005a30;color:#00ff88;"
                     "border:1px solid #00c896;border-radius:4px;"
-                    "padding:4px 12px;font-family:Courier New;"
+                    "padding:4px 12px;font-family:'Noto Sans',Arial,sans-serif;"
                     "font-size:10px;font-weight:bold;}"
                     "QPushButton:hover{background:#007040;}")
         except Exception:
@@ -510,7 +510,7 @@ class MainWindow(QMainWindow):
         lbl = QLabel(f"{name} — Reserved for future expansion")
         lbl.setStyleSheet(
             "color:#3a4055;font-size:14px;"
-            "font-family:Courier New;")
+            "font-family:'Noto Sans',Arial,sans-serif;")
         lbl.setAlignment(Qt.AlignCenter)
         lay.addStretch()
         lay.addWidget(lbl)

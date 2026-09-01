@@ -36,7 +36,7 @@ MISSIONS_HUSKY = "~/missions"
 EDITOR_STYLE = (
     "background:#0a0d14;"
     "color:#c8d0e0;"
-    "font-family:'Courier New',monospace;"
+    "font-family:'Noto Sans',Arial,sans-serif;"
     "font-size:11px;"
     "border:1px solid #2a2f3d;"
     "border-radius:4px;"
@@ -45,12 +45,12 @@ EDITOR_STYLE = (
 
 DIALOG_STYLE = (
     "QDialog{background:#0f1117;color:#e8eaf0;}"
-    "QLabel{color:#e8eaf0;font-family:'Courier New';font-size:10px;}"
-    "QPushButton{font-family:'Courier New';font-size:11px;"
+    "QLabel{color:#e8eaf0;font-family:'Noto Sans',Arial,sans-serif;font-size:10px;}"
+    "QPushButton{font-family:'Noto Sans',Arial,sans-serif;font-size:11px;"
     "border-radius:4px;padding:6px 14px;}"
     "QLineEdit{background:#1a1e2e;color:#e8eaf0;"
     "border:1px solid #2a2f3d;border-radius:4px;padding:4px;"
-    "font-family:'Courier New';font-size:11px;}"
+    "font-family:'Noto Sans',Arial,sans-serif;font-size:11px;}"
 )
 
 HELP_HTML = """
@@ -166,7 +166,7 @@ class MissionEditorDialog(QDialog):
 
         self.lbl_valid = QLabel("● Ready")
         self.lbl_valid.setStyleSheet(
-            "color:#00c896;font-family:'Courier New';font-size:10px;")
+            "color:#00c896;font-family:'Noto Sans',Arial,sans-serif;font-size:10px;")
         elay.addWidget(self.lbl_valid)
         splitter.addWidget(left_w)
 
@@ -222,7 +222,7 @@ class MissionEditorDialog(QDialog):
         help_lbl.setWordWrap(True)
         help_lbl.setAlignment(Qt.AlignTop)
         help_lbl.setStyleSheet(
-            "color:#8090a8;font-family:'Courier New';font-size:10px;"
+            "color:#8090a8;font-family:'Noto Sans',Arial,sans-serif;font-size:10px;"
             "background:#0a0d14;border:1px solid #1a1e2e;"
             "border-radius:4px;padding:6px;")
         scr = QScrollArea()
@@ -273,12 +273,12 @@ class MissionEditorDialog(QDialog):
             yaml.safe_load(self.editor.toPlainText())
             self.lbl_valid.setText("● YAML valid")
             self.lbl_valid.setStyleSheet(
-                "color:#00c896;font-family:'Courier New';font-size:10px;")
+                "color:#00c896;font-family:'Noto Sans',Arial,sans-serif;font-size:10px;")
         except Exception as e:
             short = str(e)[:90]
             self.lbl_valid.setText(f"✗ {short}")
             self.lbl_valid.setStyleSheet(
-                "color:#e84545;font-family:'Courier New';font-size:10px;")
+                "color:#e84545;font-family:'Noto Sans',Arial,sans-serif;font-size:10px;")
 
     def _validate(self):
         try:
@@ -365,7 +365,7 @@ class MissionEditorDialog(QDialog):
             self._refresh()
             self.lbl_valid.setText(f"● Saved: {name}")
             self.lbl_valid.setStyleSheet(
-                "color:#00c896;font-family:'Courier New';font-size:10px;")
+                "color:#00c896;font-family:'Noto Sans',Arial,sans-serif;font-size:10px;")
             return True
         except Exception as e:
             QMessageBox.critical(self, "Save Error", str(e))

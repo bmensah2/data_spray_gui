@@ -51,14 +51,14 @@ class CheckRow(QWidget):
         self.name_lbl = QLabel(name)
         theme_manager.register_widget(
             self.name_lbl, lambda p: (
-                f"color:{p['text']};font-family:Courier New;"
+                f"color:{p['text']};font-family:'Noto Sans',Arial,sans-serif;"
                 f"font-size:10px;font-weight:bold;"))
         self.name_lbl.setMinimumWidth(140)
         lay.addWidget(self.name_lbl)
         self.status_lbl = QLabel("—")
         self.status_lbl.setStyleSheet(
             f"color:{theme_manager.palette()['muted']};"
-            f"font-family:Courier New;font-size:10px;")
+            f"font-family:'Noto Sans',Arial,sans-serif;font-size:10px;")
         lay.addWidget(self.status_lbl, stretch=1)
 
     def set_pending(self, msg="Checking..."):
@@ -66,35 +66,35 @@ class CheckRow(QWidget):
         self.status_lbl.setText(msg)
         p = theme_manager.palette()
         self.status_lbl.setStyleSheet(
-            f"color:{p['amber']};font-family:Courier New;font-size:10px;")
+            f"color:{p['amber']};font-family:'Noto Sans',Arial,sans-serif;font-size:10px;")
 
     def set_pass(self, msg="OK"):
         self.led.set_state(True, role="green")
         self.status_lbl.setText(f"✓  {msg}")
         p = theme_manager.palette()
         self.status_lbl.setStyleSheet(
-            f"color:{p['green']};font-family:Courier New;font-size:10px;")
+            f"color:{p['green']};font-family:'Noto Sans',Arial,sans-serif;font-size:10px;")
 
     def set_fail(self, msg="FAIL"):
         self.led.set_state(True, role="red")
         self.status_lbl.setText(f"✗  {msg}")
         p = theme_manager.palette()
         self.status_lbl.setStyleSheet(
-            f"color:{p['red']};font-family:Courier New;font-size:10px;")
+            f"color:{p['red']};font-family:'Noto Sans',Arial,sans-serif;font-size:10px;")
 
     def set_warn(self, msg="WARNING"):
         self.led.set_state(True, role="amber")
         self.status_lbl.setText(f"⚠  {msg}")
         p = theme_manager.palette()
         self.status_lbl.setStyleSheet(
-            f"color:{p['amber']};font-family:Courier New;font-size:10px;")
+            f"color:{p['amber']};font-family:'Noto Sans',Arial,sans-serif;font-size:10px;")
 
     def reset(self):
         self.led.set_state(False, role="green")
         self.status_lbl.setText("—")
         p = theme_manager.palette()
         self.status_lbl.setStyleSheet(
-            f"color:{p['muted']};font-family:Courier New;font-size:10px;")
+            f"color:{p['muted']};font-family:'Noto Sans',Arial,sans-serif;font-size:10px;")
 
 
 # ─────────────────────────────────────────────────────────────
@@ -115,7 +115,7 @@ class NozzleWidget(QFrame):
         lb = QLabel(f"N{index+1}")
         theme_manager.register_widget(
             lb, lambda p: (
-                f"color:{p['text']};font-family:'Courier New';"
+                f"color:{p['text']};font-family:'Noto Sans',Arial,sans-serif;"
                 f"font-weight:bold;font-size:11px;background:transparent;"))
         lay.addWidget(lb)
         lay.addStretch()
@@ -235,7 +235,7 @@ class SprayPanel(QWidget):
         theme_manager.register_widget(
             self.lbl_overall, lambda p: (
                 f"color:{p['muted']};font-size:10px;"
-                f"font-family:Courier New;font-weight:bold;"))
+                f"font-family:'Noto Sans',Arial,sans-serif;font-weight:bold;"))
         self.lbl_overall.setAlignment(Qt.AlignCenter)
         lay.addWidget(self.lbl_overall)
 
@@ -260,7 +260,7 @@ class SprayPanel(QWidget):
         self.lbl_pump = QLabel("PUMP  OFF")
         self.lbl_pump.setStyleSheet(
             f"color:{theme_manager.palette()['red']};font-size:10px;"
-            f"font-weight:bold;font-family:Courier New;")
+            f"font-weight:bold;font-family:'Noto Sans',Arial,sans-serif;")
         pump_row.addWidget(self.lbl_pump)
         pump_row.addStretch()
         self.btn_pump_on = QPushButton("PUMP ON")
@@ -366,7 +366,7 @@ class SprayPanel(QWidget):
         theme_manager.register_widget(
             self.check_log, lambda p: (
                 f"background:{p['bg0']};color:{p['muted']};"
-                f"font-family:Courier New;font-size:9px;border:none;"))
+                f"font-family:'Noto Sans',Arial,sans-serif;font-size:9px;border:none;"))
         lay.addWidget(self.check_log)
         return grp
 
@@ -383,7 +383,7 @@ class SprayPanel(QWidget):
         c = p["green"] if s.pump_on else p["red"]
         self.lbl_pump.setStyleSheet(
             f"color:{c};font-size:10px;"
-            f"font-weight:bold;font-family:Courier New;")
+            f"font-weight:bold;font-family:'Noto Sans',Arial,sans-serif;")
         theme_manager.register_button(
             self.btn_pump_on, "green" if s.pump_on else "dim_green")
         theme_manager.register_button(
@@ -441,7 +441,7 @@ class SprayPanel(QWidget):
         self.lbl_overall.setText("Checking...")
         self.lbl_overall.setStyleSheet(
             f"color:{theme_manager.palette()['amber']};font-size:10px;"
-            f"font-family:Courier New;font-weight:bold;")
+            f"font-family:'Noto Sans',Arial,sans-serif;font-weight:bold;")
         self.btn_run_checks.setEnabled(False)
         self.check_log.clear()
         self._log("=== System check started ===")
@@ -565,18 +565,18 @@ class SprayPanel(QWidget):
         if failed == 0:
             txt   = f"✓  ALL {passed} CHECKS PASSED — Field ready"
             style = (f"color:{p['green']};font-size:10px;"
-                     f"font-family:Courier New;font-weight:bold;")
+                     f"font-family:'Noto Sans',Arial,sans-serif;font-weight:bold;")
             self.shared_log.log("SYS", "All checks passed", "ok")
         elif passed > failed:
             txt   = f"⚠  {passed}/{passed+failed} — Fix {failed} issue(s)"
             style = (f"color:{p['amber']};font-size:10px;"
-                     f"font-family:Courier New;font-weight:bold;")
+                     f"font-family:'Noto Sans',Arial,sans-serif;font-weight:bold;")
             self.shared_log.log(
                 "SYS", f"{passed}/{passed+failed} checks passed", "warn")
         else:
             txt   = f"✗  {failed} FAILURES — Not field ready"
             style = (f"color:{p['red']};font-size:10px;"
-                     f"font-family:Courier New;font-weight:bold;")
+                     f"font-family:'Noto Sans',Arial,sans-serif;font-weight:bold;")
             self.shared_log.log("SYS", f"{failed} checks FAILED", "error")
 
         self.lbl_overall.setText(txt)

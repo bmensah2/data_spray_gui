@@ -485,7 +485,7 @@ class DualCameraPanel:
         disp_combo.setStyleSheet(
             "QComboBox{background:#1a1e2e;color:#e8eaf0;"
             "border:1px solid #3a4055;border-radius:3px;"
-            "padding:2px 6px;font-family:Courier New;font-size:9px;}"
+            "padding:2px 6px;font-family:'Noto Sans',Arial,sans-serif;font-size:9px;}"
             "QComboBox::drop-down{border:none;}"
             "QComboBox QAbstractItemView{background:#1a1e2e;"
             "color:#e8eaf0;selection-background-color:#2e3448;}")
@@ -498,7 +498,7 @@ class DualCameraPanel:
         status_lbl = QLabel("Disconnected")
         status_lbl.setStyleSheet(
             "color:#8090a8;font-size:9px;"
-            "font-family:Courier New;")
+            "font-family:'Noto Sans',Arial,sans-serif;")
         lay.addWidget(status_lbl)
         self._status_lbls.append(status_lbl)
 
@@ -519,7 +519,7 @@ class DualCameraPanel:
         lbl.setStyleSheet(
             "background-color:#050810;"
             "color:#3a4055;"
-            "font-family:Courier New;"
+            "font-family:'Noto Sans',Arial,sans-serif;"
             "font-size:11px;"
             "border:1px solid #1a1e2e;")
         lbl.setSizePolicy(
@@ -578,17 +578,17 @@ class DualCameraPanel:
                     lbl.setText(f"● LIVE  —  {self.camera_model}")
                     lbl.setStyleSheet(
                         "color:#4ab4ff;font-size:9px;"
-                        "font-family:Courier New;font-weight:bold;")
+                        "font-family:'Noto Sans',Arial,sans-serif;font-weight:bold;")
                 elif connected:
                     lbl.setText(f"Connected  —  {self.camera_model}")
                     lbl.setStyleSheet(
                         "color:#60c0a0;font-size:9px;"
-                        "font-family:Courier New;")
+                        "font-family:'Noto Sans',Arial,sans-serif;")
                 else:
                     lbl.setText("Disconnected")
                     lbl.setStyleSheet(
                         "color:#8090a8;font-size:9px;"
-                        "font-family:Courier New;")
+                        "font-family:'Noto Sans',Arial,sans-serif;")
             except RuntimeError:
                 pass
 

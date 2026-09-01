@@ -198,7 +198,7 @@ class DetectionTab(QWidget):
             "Camera settings are shared with Data Collection tab. "
             "Changes here apply to both tabs immediately.")
         info.setStyleSheet(
-            "color:#60a080;font-size:9px;font-family:Courier New;"
+            "color:#60a080;font-size:9px;font-family:'Noto Sans',Arial,sans-serif;"
             "padding:4px;background:#0a1a0a;border-radius:3px;")
         info.setWordWrap(True)
         outer.addWidget(info)
@@ -215,7 +215,7 @@ class DetectionTab(QWidget):
         btn_outdoor.setStyleSheet(
             "QPushButton{background:#1a3a2a;color:#60d090;"
             "border:1px solid #2a6a4a;border-radius:4px;"
-            "padding:6px;font-family:Courier New;font-size:10px;}"
+            "padding:6px;font-family:'Noto Sans',Arial,sans-serif;font-size:10px;}"
             "QPushButton:hover{background:#2a4a3a;}")
         btn_outdoor.clicked.connect(
             lambda: getattr(self.acq, "_preset_outdoor", lambda: None)())
@@ -225,7 +225,7 @@ class DetectionTab(QWidget):
         btn_cloudy.setStyleSheet(
             "QPushButton{background:#1a2a3a;color:#80b0d0;"
             "border:1px solid #2a4a6a;border-radius:4px;"
-            "padding:6px;font-family:Courier New;font-size:10px;}"
+            "padding:6px;font-family:'Noto Sans',Arial,sans-serif;font-size:10px;}"
             "QPushButton:hover{background:#2a3a4a;}")
         btn_cloudy.clicked.connect(
             lambda: getattr(self.acq, "_preset_cloudy", lambda: None)())
@@ -235,7 +235,7 @@ class DetectionTab(QWidget):
         btn_indoor.setStyleSheet(
             "QPushButton{background:#2a2a1a;color:#d0c060;"
             "border:1px solid #5a5a2a;border-radius:4px;"
-            "padding:6px;font-family:Courier New;font-size:10px;}"
+            "padding:6px;font-family:'Noto Sans',Arial,sans-serif;font-size:10px;}"
             "QPushButton:hover{background:#3a3a2a;}")
         btn_indoor.clicked.connect(
             lambda: getattr(self.acq, "_preset_indoor", lambda: None)())
@@ -320,7 +320,7 @@ class DetectionTab(QWidget):
             theme_manager.register_widget(
                 self.arm_status, lambda p: (
                     f"color:{p['amber']};font-size:10px;"
-                    f"font-family:Courier New;"))
+                    f"font-family:'Noto Sans',Arial,sans-serif;"))
             self.nav.set_movement_controls_enabled(True)
             self.armed_changed.emit(True)
 
@@ -335,7 +335,7 @@ class DetectionTab(QWidget):
         theme_manager.register_widget(
             self.arm_status, lambda p: (
                 f"color:{p['muted']};font-size:10px;"
-                f"font-family:Courier New;"))
+                f"font-family:'Noto Sans',Arial,sans-serif;"))
         self.nav.set_movement_controls_enabled(False)
         self.armed_changed.emit(False)
 

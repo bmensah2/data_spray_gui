@@ -50,7 +50,7 @@ class LightWidget(QFrame):
         lb = QLabel("AL295W")
         theme_manager.register_widget(
             lb, lambda p: (
-                f"color:{p['text']};font-family:'Courier New';"
+                f"color:{p['text']};font-family:'Noto Sans',Arial,sans-serif;"
                 f"font-weight:bold;font-size:11px;background:transparent;"))
         lay.addWidget(lb)
         lay.addStretch()
@@ -89,7 +89,7 @@ class MotorPsuWidget(QFrame):
         lb = QLabel("12V PSU")
         theme_manager.register_widget(
             lb, lambda p: (
-                f"color:{p['text']};font-family:'Courier New';"
+                f"color:{p['text']};font-family:'Noto Sans',Arial,sans-serif;"
                 f"font-weight:bold;font-size:11px;background:transparent;"))
         lay.addWidget(lb)
         lay.addStretch()
@@ -196,7 +196,7 @@ class GantryPanel(QWidget):
         self.lbl_homed = QLabel("NOT HOMED")
         self.lbl_homed.setStyleSheet(
             f"color:{theme_manager.palette()['red']};font-size:10px;"
-            f"font-family:'Courier New';font-weight:bold;"
+            f"font-family:'Noto Sans',Arial,sans-serif;font-weight:bold;"
         )
         sr.addWidget(self.lbl_homed)
         sr.addStretch()
@@ -204,7 +204,7 @@ class GantryPanel(QWidget):
         theme_manager.register_widget(
             self.lbl_arm_pos, lambda p: (
                 f"color:{p['blue']};font-size:13px;"
-                f"font-weight:bold;font-family:'Courier New';"))
+                f"font-weight:bold;font-family:'Noto Sans',Arial,sans-serif;"))
         sr.addWidget(self.lbl_arm_pos)
         lay.addLayout(sr)
 
@@ -296,7 +296,7 @@ class GantryPanel(QWidget):
         theme_manager.register_widget(
             self.lbl_servo, lambda p: (
                 f"color:{p['amber']};font-size:13px;"
-                f"font-weight:bold;font-family:'Courier New';"))
+                f"font-weight:bold;font-family:'Noto Sans',Arial,sans-serif;"))
         ar.addWidget(self.lbl_servo)
         ar.addStretch()
         lay.addLayout(ar)
@@ -360,14 +360,14 @@ class GantryPanel(QWidget):
         self.lbl_seq_st = QLabel("IDLE")
         self.lbl_seq_st.setStyleSheet(
             f"color:{theme_manager.palette()['muted']};"
-            f"font-size:10px;font-family:'Courier New';")
+            f"font-size:10px;font-family:'Noto Sans',Arial,sans-serif;")
         sr.addWidget(self.lbl_seq_st)
         sr.addStretch()
         self.lbl_seq_pr = QLabel("")
         theme_manager.register_widget(
             self.lbl_seq_pr, lambda p: (
                 f"color:{p['blue']};font-size:10px;"
-                f"font-family:'Courier New';font-weight:bold;"))
+                f"font-family:'Noto Sans',Arial,sans-serif;font-weight:bold;"))
         sr.addWidget(self.lbl_seq_pr)
         lay.addLayout(sr)
 
@@ -433,13 +433,13 @@ class GantryPanel(QWidget):
             theme_manager.register_widget(
                 l, lambda p: (
                     f"color:{p['muted']};font-size:10px;"
-                    f"font-family:'Courier New';"))
+                    f"font-family:'Noto Sans',Arial,sans-serif;"))
             v = QLabel(default)
             if role:
                 theme_manager.register_widget(
                     v, lambda p, role=role: (
                         f"color:{p[role]};font-size:10px;"
-                        f"font-family:'Courier New';font-weight:bold;"))
+                        f"font-family:'Noto Sans',Arial,sans-serif;font-weight:bold;"))
             grid.addWidget(l, r, 0)
             grid.addWidget(v, r, 1)
             setattr(self, attr, v)
@@ -447,7 +447,7 @@ class GantryPanel(QWidget):
         _row(0, "Limit switch:", "lbl_limit",  "—")
         self.lbl_limit.setStyleSheet(
             f"color:{theme_manager.palette()['dim']};font-size:10px;"
-            f"font-family:'Courier New';font-weight:bold;")
+            f"font-family:'Noto Sans',Arial,sans-serif;font-weight:bold;")
         _row(1, "Move speed:",   "lbl_mspeed", "—", role="blue")
         _row(2, "Home speed:",   "lbl_hspeed", "—", role="blue")
         lay.addLayout(grid)
@@ -541,7 +541,7 @@ class GantryPanel(QWidget):
             self.lbl_homed.setText("DETECTION MODE — arm locked")
             self.lbl_homed.setStyleSheet(
                 f"color:{p['blue']};font-size:10px;"
-                f"font-family:'Courier New';font-weight:bold;")
+                f"font-family:'Noto Sans',Arial,sans-serif;font-weight:bold;")
             self.led_homed.set_state(True, role="blue")
         else:
             self.led_homed.set_state(s.homed, role="green")
@@ -549,7 +549,7 @@ class GantryPanel(QWidget):
             self.lbl_homed.setText("HOMED" if s.homed else "NOT HOMED")
             self.lbl_homed.setStyleSheet(
                 f"color:{c};font-size:10px;"
-                f"font-family:'Courier New';font-weight:bold;")
+                f"font-family:'Noto Sans',Arial,sans-serif;font-weight:bold;")
             theme_manager.register_button(
                 self.btn_home, "dim_blue" if s.homed else "blue")
             theme_manager.register_button(
@@ -582,13 +582,13 @@ class GantryPanel(QWidget):
             self.lbl_seq_st.setText(f"{st} [{mode}]")
             c = p["amber"] if s.seq_paused else p["green"]
             self.lbl_seq_st.setStyleSheet(
-                f"color:{c};font-size:10px;font-family:'Courier New';")
+                f"color:{c};font-size:10px;font-family:'Noto Sans',Arial,sans-serif;")
             self.lbl_seq_pr.setText(
                 f"step {s.seq_step}/{s.seq_total}")
         else:
             self.lbl_seq_st.setText("IDLE")
             self.lbl_seq_st.setStyleSheet(
-                f"color:{p['muted']};font-size:10px;font-family:'Courier New';")
+                f"color:{p['muted']};font-size:10px;font-family:'Noto Sans',Arial,sans-serif;")
             self.lbl_seq_pr.setText("")
 
         # Status
@@ -596,7 +596,7 @@ class GantryPanel(QWidget):
         c = p["green"] if s.limit_ok else p["red"]
         self.lbl_limit.setStyleSheet(
             f"color:{c};font-size:10px;"
-            f"font-family:'Courier New';font-weight:bold;")
+            f"font-family:'Noto Sans',Arial,sans-serif;font-weight:bold;")
         self.lbl_mspeed.setText(f"{s.move_speed} µs")
         self.lbl_hspeed.setText(f"{s.home_speed} µs")
 

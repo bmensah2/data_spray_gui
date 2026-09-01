@@ -216,14 +216,14 @@ class NavigationPanelRGB(QWidget):
         theme_manager.register_widget(
             self.lbl_conn_status, lambda p: (
                 f"color:{_darken(p['amber'], 40)};"
-                f"font-family:Courier New;font-size:10px;"))
+                f"font-family:'Noto Sans',Arial,sans-serif;font-size:10px;"))
         lay.addWidget(self.lbl_conn_status)
 
         self.lbl_odom = QLabel(
             "x=--  y=--  yaw=--  spd=--")
         theme_manager.register_widget(
             self.lbl_odom, lambda p: (
-                f"color:{p['muted']};font-family:Courier New;font-size:9px;"))
+                f"color:{p['muted']};font-family:'Noto Sans',Arial,sans-serif;font-size:9px;"))
         lay.addWidget(self.lbl_odom)
 
         self.lbl_husky_ip = _muted(f"Husky: {HUSKY_USER}@{HUSKY_IP}")
@@ -473,7 +473,7 @@ class NavigationPanelRGB(QWidget):
         theme_manager.register_widget(
             self.lbl_mission_desc, lambda p: (
                 f"color:{p['muted']};font-size:9px;"
-                f"font-family:Courier New;"))
+                f"font-family:'Noto Sans',Arial,sans-serif;"))
         self.lbl_mission_desc.setWordWrap(True)
         lay.addWidget(self.lbl_mission_desc)
 
@@ -495,7 +495,7 @@ class NavigationPanelRGB(QWidget):
         theme_manager.register_widget(
             self.mission_log, lambda p: (
                 f"background:{p['bg0']};color:{p['muted']};"
-                f"font-family:Courier New;font-size:9px;border:none;"))
+                f"font-family:'Noto Sans',Arial,sans-serif;font-size:9px;border:none;"))
         lay.addWidget(self.mission_log)
 
         # Control buttons
@@ -591,7 +591,7 @@ class NavigationPanelRGB(QWidget):
                 theme_manager.register_widget(
                     self.lbl_conn_status, lambda p: (
                         f"color:{_darken(p['amber'], 40)};"
-                        f"font-family:Courier New;font-size:10px;"))
+                        f"font-family:'Noto Sans',Arial,sans-serif;font-size:10px;"))
                 return
 
             connected = bridge.is_connected()
@@ -602,13 +602,13 @@ class NavigationPanelRGB(QWidget):
                     "● Connected  cpr-a200-0943")
                 theme_manager.register_widget(
                     self.lbl_conn_status, lambda p: (
-                        f"color:{p['green']};font-family:Courier New;"
+                        f"color:{p['green']};font-family:'Noto Sans',Arial,sans-serif;"
                         f"font-size:10px;"))
             else:
                 self.lbl_conn_status.setText("● Disconnected")
                 theme_manager.register_widget(
                     self.lbl_conn_status, lambda p: (
-                        f"color:{p['red']};font-family:Courier New;"
+                        f"color:{p['red']};font-family:'Noto Sans',Arial,sans-serif;"
                         f"font-size:10px;"))
 
             if pose:
@@ -984,7 +984,7 @@ class NavigationPanelRGB(QWidget):
         self.sm_model.setStyleSheet(
             "background:#1a1e2e;color:#e8eaf0;"
             "border:1px solid #3a4055;border-radius:3px;"
-            "font-family:Courier New;font-size:9px;padding:2px;")
+            "font-family:'Noto Sans',Arial,sans-serif;font-size:9px;padding:2px;")
         cfg_grid.addWidget(self.sm_model, 0, 1, 1, 2)
         btn_browse_model = QPushButton("Browse")
         btn_browse_model.setFixedWidth(60)
@@ -1014,7 +1014,7 @@ class NavigationPanelRGB(QWidget):
         self.sm_field_id.setStyleSheet(
             "background:#1a1e2e;color:#e8eaf0;"
             "border:1px solid #3a4055;border-radius:3px;"
-            "font-family:Courier New;font-size:9px;padding:2px;")
+            "font-family:'Noto Sans',Arial,sans-serif;font-size:9px;padding:2px;")
         cfg_grid.addWidget(self.sm_field_id, 2, 1)
 
         cfg_grid.addWidget(_muted("Port:"), 2, 2)
@@ -1022,7 +1022,7 @@ class NavigationPanelRGB(QWidget):
         self.sm_port.setStyleSheet(
             "background:#1a1e2e;color:#e8eaf0;"
             "border:1px solid #3a4055;border-radius:3px;"
-            "font-family:Courier New;font-size:9px;padding:2px;")
+            "font-family:'Noto Sans',Arial,sans-serif;font-size:9px;padding:2px;")
         cfg_grid.addWidget(self.sm_port, 2, 3)
 
         lay.addLayout(cfg_grid)
@@ -1031,11 +1031,11 @@ class NavigationPanelRGB(QWidget):
         flag_row = QHBoxLayout()
         self.sm_dry_run = QCheckBox("Dry run (log only)")
         self.sm_dry_run.setStyleSheet(
-            "color:#f5a623;font-family:Courier New;font-size:9px;")
+            "color:#f5a623;font-family:'Noto Sans',Arial,sans-serif;font-size:9px;")
         flag_row.addWidget(self.sm_dry_run)
         self.sm_dummy = QCheckBox("Dummy detect (timing test)")
         self.sm_dummy.setStyleSheet(
-            "color:#f5a623;font-family:Courier New;font-size:9px;")
+            "color:#f5a623;font-family:'Noto Sans',Arial,sans-serif;font-size:9px;")
         flag_row.addWidget(self.sm_dummy)
         flag_row.addStretch()
         lay.addLayout(flag_row)
@@ -1086,7 +1086,7 @@ class NavigationPanelRGB(QWidget):
         # ── Status + progress ──────────────────────────────────
         self.lbl_sm_status = QLabel("Ready")
         self.lbl_sm_status.setStyleSheet(
-            "color:#8090a8;font-family:Courier New;"
+            "color:#8090a8;font-family:'Noto Sans',Arial,sans-serif;"
             "font-size:9px;")
         lay.addWidget(self.lbl_sm_status)
 
@@ -1103,7 +1103,7 @@ class NavigationPanelRGB(QWidget):
         self.sm_log.setFixedHeight(80)
         self.sm_log.setStyleSheet(
             "background:#050810;color:#6070a0;"
-            "font-family:Courier New;font-size:9px;border:none;")
+            "font-family:'Noto Sans',Arial,sans-serif;font-size:9px;border:none;")
         lay.addWidget(self.sm_log)
 
         lay.addWidget(_divider())
@@ -1117,7 +1117,7 @@ class NavigationPanelRGB(QWidget):
         self.sm_session_path.setStyleSheet(
             "background:#1a1e2e;color:#e8eaf0;"
             "border:1px solid #3a4055;border-radius:3px;"
-            "font-family:Courier New;font-size:9px;padding:2px;")
+            "font-family:'Noto Sans',Arial,sans-serif;font-size:9px;padding:2px;")
         rep_row.addWidget(self.sm_session_path, stretch=1)
         btn_browse_session = QPushButton("Browse")
         btn_browse_session.setFixedWidth(60)
@@ -1237,7 +1237,7 @@ class NavigationPanelRGB(QWidget):
         self.sm_progress.setFormat("Running…")
         self.lbl_sm_status.setText("● RUNNING")
         self.lbl_sm_status.setStyleSheet(
-            "color:#00c896;font-family:Courier New;"
+            "color:#00c896;font-family:'Noto Sans',Arial,sans-serif;"
             "font-size:9px;font-weight:bold;")
 
         # Poll output every 400ms
@@ -1263,7 +1263,7 @@ class NavigationPanelRGB(QWidget):
                 self.btn_sm_pause.setText("▶  CONTINUE")
                 self.lbl_sm_status.setText("⏸  PAUSED")
                 self.lbl_sm_status.setStyleSheet(
-                    "color:#f5a623;font-family:Courier New;"
+                    "color:#f5a623;font-family:'Noto Sans',Arial,sans-serif;"
                     "font-size:9px;font-weight:bold;")
                 self.shared_log.log("SPRAY", "Mission PAUSED", "warn")
             else:
@@ -1272,7 +1272,7 @@ class NavigationPanelRGB(QWidget):
                 self.btn_sm_pause.setText("⏸  PAUSE")
                 self.lbl_sm_status.setText("● RUNNING")
                 self.lbl_sm_status.setStyleSheet(
-                    "color:#00c896;font-family:Courier New;"
+                    "color:#00c896;font-family:'Noto Sans',Arial,sans-serif;"
                     "font-size:9px;font-weight:bold;")
                 self.shared_log.log("SPRAY", "Mission RESUMED", "info")
         except Exception as e:
@@ -1377,14 +1377,14 @@ class NavigationPanelRGB(QWidget):
             self.sm_progress.setFormat("Complete ✓")
             self.lbl_sm_status.setText("✓ Mission complete")
             self.lbl_sm_status.setStyleSheet(
-                "color:#00c896;font-family:Courier New;"
+                "color:#00c896;font-family:'Noto Sans',Arial,sans-serif;"
                 "font-size:9px;font-weight:bold;")
             self.shared_log.log("SPRAY", "Mission COMPLETE", "ok")
         else:
             self.sm_progress.setFormat("Stopped")
             self.lbl_sm_status.setText("⏹ Stopped")
             self.lbl_sm_status.setStyleSheet(
-                "color:#8090a8;font-family:Courier New;"
+                "color:#8090a8;font-family:'Noto Sans',Arial,sans-serif;"
                 "font-size:9px;")
             self.shared_log.log("SPRAY", "Mission STOPPED", "warn")
 

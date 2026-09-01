@@ -495,7 +495,7 @@ if QT_AVAILABLE:
 
             self._status_lbl = QLabel("Initializing...")
             self._status_lbl.setStyleSheet(
-                "color:#8090a8;font-family:Courier New;font-size:10px;")
+                "color:#8090a8;font-family:'Noto Sans',Arial,sans-serif;font-size:10px;")
             hdr.addWidget(self._status_lbl, stretch=1)
 
             hdr.addWidget(QLabel("View:"))
@@ -535,7 +535,7 @@ if QT_AVAILABLE:
             self._snap_lbl  = QLabel("Snapshots: 0")
             for lbl in [self._fps_lbl, self._dist_lbl, self._snap_lbl]:
                 lbl.setStyleSheet(
-                    "color:#8090a8;font-family:Courier New;"
+                    "color:#8090a8;font-family:'Noto Sans',Arial,sans-serif;"
                     "font-size:9px;")
                 stats.addWidget(lbl)
             stats.addStretch()
@@ -557,11 +557,11 @@ if QT_AVAILABLE:
             ]):
                 l = QLabel(lb)
                 l.setStyleSheet(
-                    "color:#6070a0;font-family:Courier New;"
+                    "color:#6070a0;font-family:'Noto Sans',Arial,sans-serif;"
                     "font-size:9px;")
                 v = getattr(self, attr)
                 v.setStyleSheet(
-                    "color:#a0b8d0;font-family:Courier New;"
+                    "color:#a0b8d0;font-family:'Noto Sans',Arial,sans-serif;"
                     "font-size:9px;")
                 ig.addWidget(l, row, 0)
                 ig.addWidget(v, row, 1)
@@ -768,19 +768,19 @@ if QT_AVAILABLE:
                 QGroupBox{
                     border:1px solid #2a2f3d; border-radius:4px;
                     margin-top:8px; color:#a0b0c0;
-                    font-family:Courier New; font-size:10px; }
+                    font-family:'Noto Sans',Arial,sans-serif; font-size:10px; }
                 QGroupBox::title{
                     subcontrol-origin:margin; padding:0 4px; }
-                QLabel  { font-family:Courier New; }
+                QLabel  { font-family:'Noto Sans',Arial,sans-serif; }
                 QPushButton{
                     background:#1a2030; color:#e8eaf0;
                     border:1px solid #2a3050; border-radius:4px;
-                    padding:4px 8px; font-family:Courier New; }
+                    padding:4px 8px; font-family:'Noto Sans',Arial,sans-serif; }
                 QPushButton:hover{ background:#2a3040; }
                 QComboBox{
                     background:#1a2030; color:#e8eaf0;
                     border:1px solid #3a4055; border-radius:3px;
-                    font-family:Courier New; font-size:10px; }
+                    font-family:'Noto Sans',Arial,sans-serif; font-size:10px; }
             """)
 
             lay = QVBoxLayout(self)
@@ -796,7 +796,7 @@ if QT_AVAILABLE:
                     "⚡ Embedded mode: 480×270 @ 15fps "
                     "(Bus 02 cameras-only layout — optimized)")
                 mode_lbl.setStyleSheet(
-                    "color:#f5a623;font-family:Courier New;"
+                    "color:#f5a623;font-family:'Noto Sans',Arial,sans-serif;"
                     "font-size:9px;")
                 mb.addWidget(mode_lbl)
                 mb.addStretch()
@@ -805,7 +805,7 @@ if QT_AVAILABLE:
                 btn_full.setStyleSheet(
                     "QPushButton{background:#1a2030;color:#60c0ff;"
                     "border:1px solid #2a5080;border-radius:3px;"
-                    "padding:2px 8px;font-family:Courier New;"
+                    "padding:2px 8px;font-family:'Noto Sans',Arial,sans-serif;"
                     "font-size:9px;}"
                     "QPushButton:hover{background:#2a3040;}")
                 btn_full.clicked.connect(self._switch_full)
@@ -814,7 +814,7 @@ if QT_AVAILABLE:
                 mode_lbl = QLabel(
                     "✓ Standalone mode: 640×480 @ 30fps")
                 mode_lbl.setStyleSheet(
-                    "color:#00c896;font-family:Courier New;"
+                    "color:#00c896;font-family:'Noto Sans',Arial,sans-serif;"
                     "font-size:9px;")
                 mb.addWidget(mode_lbl)
             lay.addWidget(mode_bar)
@@ -878,18 +878,18 @@ def run_standalone():
         QWidget  { background-color: #0f1117; color: #e8eaf0; }
         QGroupBox{ border:1px solid #2a2f3d; border-radius:4px;
                    margin-top:8px; color:#a0b0c0;
-                   font-family:Courier New; font-size:10px; }
+                   font-family:'Noto Sans',Arial,sans-serif; font-size:10px; }
         QGroupBox::title { subcontrol-origin:margin; padding:0 4px; }
-        QLabel   { font-family: Courier New; }
+        QLabel   { font-family: 'Noto Sans', Arial, sans-serif; }
         QPushButton {
             background:#1a2030; color:#e8eaf0;
             border:1px solid #2a3050; border-radius:4px;
-            padding:4px 8px; font-family:Courier New; }
+            padding:4px 8px; font-family:'Noto Sans',Arial,sans-serif; }
         QPushButton:hover { background:#2a3040; }
         QComboBox {
             background:#1a2030; color:#e8eaf0;
             border:1px solid #3a4055; border-radius:3px;
-            font-family:Courier New; font-size:10px; }
+            font-family:'Noto Sans',Arial,sans-serif; font-size:10px; }
     """)
 
     from PyQt5.QtWidgets import QMainWindow

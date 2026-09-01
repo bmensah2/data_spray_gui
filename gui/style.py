@@ -172,7 +172,7 @@ def _muted(text: str, size: int = 10) -> QLabel:
     def _style(p):
         return (
             f"color:{p['muted']};font-size:{size}px;"
-            f"font-family:'Courier New';background:transparent;"
+            f"font-family:'Noto Sans',Arial,sans-serif;background:transparent;"
         )
 
     theme_manager.register_widget(l, _style)
@@ -190,7 +190,7 @@ def _sec(text: str, size: int = 11) -> QLabel:
             color = _lighten(p["teal"], 25)
         return (
             f"color:{color};font-size:{size}px;font-weight:bold;"
-            f"font-family:'Courier New';letter-spacing:1px;padding:1px 0;"
+            f"font-family:'Noto Sans',Arial,sans-serif;letter-spacing:1px;padding:1px 0;"
         )
 
     theme_manager.register_widget(l, _style)

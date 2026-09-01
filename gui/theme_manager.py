@@ -105,7 +105,7 @@ def _btn(bg: str, fg: str = "#ffffff",
     return (
         f"QPushButton{{background-color:{bg};color:{fg};border:none;"
         f"border-radius:4px;padding:4px 9px;"
-        f"font-family:'Courier New',monospace;font-size:10px;"
+        f"font-family:'Noto Sans',Arial,sans-serif;font-size:10px;"
         f"font-weight:bold;min-height:24px;}}"
         f"QPushButton:hover{{background-color:{hv};}}"
         f"QPushButton:pressed{{background-color:{pr};}}"
@@ -319,7 +319,7 @@ _STYLE_TEMPLATE = """
 QMainWindow, QWidget {{
     background-color: {bg};
     color: {text};
-    font-family: 'Courier New', monospace;
+    font-family: 'Noto Sans', Arial, sans-serif;
     font-size: 11px;
 }}
 QGroupBox {{
@@ -342,7 +342,7 @@ QGroupBox::title {{
 QPushButton {{
     background-color: {btn_bg}; color: #ffffff; border: none;
     border-radius: 4px; padding: 4px 9px;
-    font-family: 'Courier New', monospace; font-size: 10px;
+    font-family: 'Noto Sans', Arial, sans-serif; font-size: 10px;
     font-weight: bold; min-height: 24px;
 }}
 QPushButton:hover   {{ background-color: {btn_hover}; }}
@@ -367,14 +367,14 @@ QSlider#servo_slider::sub-page:horizontal {{
 QLineEdit {{
     background-color: {input_bg}; color: {text};
     border: 1px solid {border}; border-radius: 4px;
-    padding: 3px 6px; font-family: 'Courier New'; font-size: 11px;
+    padding: 3px 6px; font-family: 'Noto Sans', Arial, sans-serif; font-size: 11px;
     min-height: 22px;
 }}
 QLineEdit:focus {{ border-color: {blue}; background-color: {input_focus}; }}
 QComboBox {{
     background-color: {input_bg}; color: {text};
     border: 1px solid {border}; border-radius: 4px;
-    padding: 3px 6px; font-family: 'Courier New'; font-size: 11px;
+    padding: 3px 6px; font-family: 'Noto Sans', Arial, sans-serif; font-size: 11px;
     min-height: 24px;
 }}
 QComboBox::drop-down {{ border: none; width: 18px; }}
@@ -386,7 +386,7 @@ QComboBox QAbstractItemView {{
 QPlainTextEdit, QTextEdit {{
     background-color: {bg0}; color: {text_dim};
     border: 1px solid {border2}; border-radius: 4px;
-    font-family: 'Courier New'; font-size: 10px;
+    font-family: 'Noto Sans', Arial, sans-serif; font-size: 10px;
 }}
 QTabWidget::pane {{
     border: 1px solid {border}; border-radius: 4px;
@@ -396,7 +396,7 @@ QTabBar::tab {{
     background-color: {input_bg}; color: {muted};
     padding: 4px 12px; border: 1px solid {border2};
     border-bottom: none; border-radius: 4px 4px 0 0;
-    font-family: 'Courier New'; font-size: 10px; min-width: 52px;
+    font-family: 'Noto Sans', Arial, sans-serif; font-size: 10px; min-width: 52px;
 }}
 QTabBar::tab:selected {{
     background-color: {bg2}; color: {text};
@@ -432,7 +432,7 @@ QCheckBox::indicator:checked {{ background-color: {connect}; }}
 QSpinBox, QDoubleSpinBox {{
     background-color: {input_bg}; color: {text};
     border: 1px solid {border}; border-radius: 4px;
-    padding: 2px 5px; font-family: 'Courier New';
+    padding: 2px 5px; font-family: 'Noto Sans', Arial, sans-serif;
     min-height: 22px; font-size: 11px;
 }}
 QProgressBar {{
@@ -444,7 +444,7 @@ QProgressBar::chunk {{ background-color: {connect}; border-radius: 3px; }}
 QScrollArea {{ border: none; background: transparent; }}
 QMenuBar {{
     background-color: {bg}; color: {text};
-    font-family: 'Courier New'; font-size: 10px;
+    font-family: 'Noto Sans', Arial, sans-serif; font-size: 10px;
 }}
 QMenuBar::item:selected {{ background-color: {input_bg}; }}
 QMenu {{
