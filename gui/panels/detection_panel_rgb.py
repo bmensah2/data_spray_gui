@@ -40,11 +40,8 @@ from PyQt5.QtWidgets import (
 )
 from PyQt5.QtCore import Qt, QTimer, pyqtSignal
 
-from gui.style import (
-    LED, BTN_BLUE, BTN_GREEN, BTN_RED, BTN_AMBER,
-    BTN_TEAL, BTN_DIM_GREEN, BTN_DIM_RED,
-    _divider, _muted, _sec, _scroll, _btn
-)
+from gui.style import LED, _divider, _muted, _sec
+from gui.theme_manager import theme_manager, _darken
 from gui.shared_log import UnifiedLog
 
 # ── RGB detection pipeline ────────────────────────────────────
@@ -254,10 +251,11 @@ class DetectionPanelRGB(QWidget):
                 "Ensure detection_config_rgb.py, detection_engine_rgb.py,\n"
                 "zone_manager_rgb.py are in core/."
             )
-            lbl.setStyleSheet(
-                "color:#f5a623;font-family:'Noto Sans',Arial,sans-serif;"
-                "font-size:10px;")
             lbl.setWordWrap(True)
+            theme_manager.register_widget(
+                lbl, lambda p: (
+                    f"color:{p['amber']};font-family:'Noto Sans',Arial,sans-serif;"
+                    f"font-size:10px;"))
             lay.addWidget(lbl)
         else:
             lay.addWidget(self._config_grp())
@@ -303,8 +301,10 @@ class DetectionPanelRGB(QWidget):
         from PyQt5.QtWidgets import QCheckBox as _QCB
         g.addWidget(_muted("Static test:"), 2, 0)
         self.chk_static = _QCB("Bypass speed check (bench/indoor test)")
-        self.chk_static.setStyleSheet(
-            "color:#f5a623;font-family:'Noto Sans',Arial,sans-serif;font-size:9px;")
+        theme_manager.register_widget(
+            self.chk_static, lambda p: (
+                f"color:{p['amber']};font-family:'Noto Sans',Arial,sans-serif;"
+                f"font-size:9px;"))
         self.chk_static.setChecked(False)
         self.chk_static.stateChanged.connect(self._on_static_toggle)
         g.addWidget(self.chk_static, 2, 1, 1, 3)
@@ -316,12 +316,14 @@ class DetectionPanelRGB(QWidget):
         lay = QHBoxLayout(grp)
 
         self.lbl_model = QLabel("No model loaded  (stub mode)")
-        self.lbl_model.setStyleSheet(
-            "color:#f5a623;font-family:'Noto Sans',Arial,sans-serif;font-size:10px;")
+        theme_manager.register_widget(
+            self.lbl_model, lambda p: (
+                f"color:{p['amber']};font-family:'Noto Sans',Arial,sans-serif;"
+                f"font-size:10px;"))
         lay.addWidget(self.lbl_model, stretch=1)
 
         self.btn_load = QPushButton("Load Model")
-        self.btn_load.setStyleSheet(BTN_BLUE)
+        theme_manager.register_button(self.btn_load, "blue")
         self.btn_load.setFixedWidth(110)
         self.btn_load.clicked.connect(self._load_model)
         lay.addWidget(self.btn_load)
@@ -334,30 +336,33 @@ class DetectionPanelRGB(QWidget):
         # Zone A / B / C LEDs
         zone_row = QHBoxLayout()
         self._zone_widgets = []
-        for name, color in [
-            ("Zone A", "#00c896"),
-            ("Zone B", "#f5a623"),
-            ("Zone C", "#4a9eff"),
+        for name, palette_key in [
+            ("Zone A", "green"),
+            ("Zone B", "amber"),
+            ("Zone C", "blue"),
         ]:
             zw  = QGroupBox(name)
-            zw.setStyleSheet(
-                f"QGroupBox{{border:1px solid {color};"
-                f"border-radius:4px;margin-top:8px;"
-                f"color:{color};font-size:9px;}}")
+            theme_manager.register_widget(
+                zw, lambda p, k=palette_key: (
+                    f"QGroupBox{{border:1px solid {p[k]};"
+                    f"border-radius:4px;margin-top:8px;"
+                    f"color:{p[k]};font-size:9px;}}"))
             zl  = QVBoxLayout(zw)
             zl.setSpacing(2)
             zl.setContentsMargins(4, 8, 4, 4)
             led = LED(16)
             cnt = QLabel("0/4")
             cnt.setAlignment(Qt.AlignCenter)
-            cnt.setStyleSheet(
-                "color:#8090a8;font-size:10px;"
-                "font-family:'Noto Sans',Arial,sans-serif;")
+            theme_manager.register_widget(
+                cnt, lambda p: (
+                    f"color:{p['muted']};font-size:10px;"
+                    f"font-family:'Noto Sans',Arial,sans-serif;"))
             dl  = QLabel("--")
             dl.setAlignment(Qt.AlignCenter)
-            dl.setStyleSheet(
-                "color:#6070a0;font-size:9px;"
-                "font-family:'Noto Sans',Arial,sans-serif;")
+            theme_manager.register_widget(
+                dl, lambda p: (
+                    f"color:{p['dim']};font-size:9px;"
+                    f"font-family:'Noto Sans',Arial,sans-serif;"))
             dl.setWordWrap(True)
             zl.addWidget(led, alignment=Qt.AlignCenter)
             zl.addWidget(cnt)
@@ -372,9 +377,10 @@ class DetectionPanelRGB(QWidget):
         for i in range(3):
             nl = LED(14)
             lb = QLabel(f"N{i+1}")
-            lb.setStyleSheet(
-                "color:#8090a8;font-size:11px;"
-                "font-family:'Noto Sans',Arial,sans-serif;")
+            theme_manager.register_widget(
+                lb, lambda p: (
+                    f"color:{p['muted']};font-size:11px;"
+                    f"font-family:'Noto Sans',Arial,sans-serif;"))
             noz_row.addWidget(lb)
             noz_row.addWidget(nl)
             self._nozzle_leds.append(nl)
@@ -400,9 +406,10 @@ class DetectionPanelRGB(QWidget):
         grp = QGroupBox("Last Spray Event")
         lay = QVBoxLayout(grp)
         self.lbl_last_event = QLabel("No spray events yet")
-        self.lbl_last_event.setStyleSheet(
-            "color:#8090a8;font-size:10px;"
-            "font-family:'Noto Sans',Arial,sans-serif;")
+        theme_manager.register_widget(
+            self.lbl_last_event, lambda p: (
+                f"color:{p['muted']};font-size:10px;"
+                f"font-family:'Noto Sans',Arial,sans-serif;"))
         self.lbl_last_event.setWordWrap(True)
         lay.addWidget(self.lbl_last_event)
         return grp
@@ -420,10 +427,12 @@ class DetectionPanelRGB(QWidget):
         """
         from PyQt5.QtWidgets import QSpinBox
         grp = QGroupBox("Pump Control")
-        grp.setStyleSheet(
-            "QGroupBox{border:1px solid #3a4055;border-radius:4px;"
-            "margin-top:8px;color:#a0a8b8;font-size:10px;font-weight:bold;}"
-            "QGroupBox::title{subcontrol-origin:margin;padding:0 4px;}")
+        theme_manager.register_widget(
+            grp, lambda p: (
+                f"QGroupBox{{border:1px solid {p['border']};border-radius:4px;"
+                f"margin-top:8px;color:{p['muted2']};font-size:10px;"
+                f"font-weight:bold;}}"
+                f"QGroupBox::title{{subcontrol-origin:margin;padding:0 4px;}}"))
         lay = QVBoxLayout(grp)
         lay.setSpacing(6)
         lay.setContentsMargins(8, 10, 8, 8)
@@ -435,14 +444,15 @@ class DetectionPanelRGB(QWidget):
         toggle_row.addWidget(self.led_pump)
 
         self.lbl_pump_state = QLabel("PUMP  DISABLED")
-        self.lbl_pump_state.setStyleSheet(
-            "color:#e84545;font-family:'Noto Sans',Arial,sans-serif;"
-            "font-size:10px;font-weight:bold;")
+        theme_manager.register_widget(
+            self.lbl_pump_state, lambda p: (
+                f"color:{p['red']};font-family:'Noto Sans',Arial,sans-serif;"
+                f"font-size:10px;font-weight:bold;"))
         toggle_row.addWidget(self.lbl_pump_state)
         toggle_row.addStretch()
 
         self.btn_pump_enable = QPushButton("⚡  ENABLE PUMP")
-        self.btn_pump_enable.setStyleSheet(BTN_GREEN)
+        theme_manager.register_button(self.btn_pump_enable, "green")
         self.btn_pump_enable.setMinimumHeight(28)
         self.btn_pump_enable.setMinimumWidth(130)
         self.btn_pump_enable.clicked.connect(self._pump_toggle)
@@ -462,15 +472,17 @@ class DetectionPanelRGB(QWidget):
         self.spn_prime.setRange(1, 30)
         self.spn_prime.setValue(3)
         self.spn_prime.setFixedWidth(60)
-        self.spn_prime.setStyleSheet(
-            "QSpinBox{background:#1a1e2e;color:#e8eaf0;"
-            "border:1px solid #3a4055;border-radius:3px;"
-            "font-family:'Noto Sans',Arial,sans-serif;font-size:10px;padding:2px;}")
+        theme_manager.register_widget(
+            self.spn_prime, lambda p: (
+                f"QSpinBox{{background:{p['input_bg']};color:{p['text']};"
+                f"border:1px solid {p['border']};border-radius:3px;"
+                f"font-family:'Noto Sans',Arial,sans-serif;font-size:10px;"
+                f"padding:2px;}}"))
         prime_row.addWidget(self.spn_prime)
         prime_row.addStretch()
 
         self.btn_prime = QPushButton("💧  PRIME PUMP")
-        self.btn_prime.setStyleSheet(BTN_BLUE)
+        theme_manager.register_button(self.btn_prime, "blue")
         self.btn_prime.setMinimumHeight(28)
         self.btn_prime.setMinimumWidth(120)
         self.btn_prime.clicked.connect(self._prime_pump)
@@ -478,8 +490,10 @@ class DetectionPanelRGB(QWidget):
         lay.addLayout(prime_row)
 
         self.lbl_prime_status = QLabel("")
-        self.lbl_prime_status.setStyleSheet(
-            "color:#4a9eff;font-size:9px;font-family:'Noto Sans',Arial,sans-serif;")
+        theme_manager.register_widget(
+            self.lbl_prime_status, lambda p: (
+                f"color:{p['blue']};font-size:9px;"
+                f"font-family:'Noto Sans',Arial,sans-serif;"))
         lay.addWidget(self.lbl_prime_status)
 
         return grp
@@ -490,12 +504,15 @@ class DetectionPanelRGB(QWidget):
         lay.addWidget(_muted(
             "Hold to open all nozzles — robot must be moving"))
         self.btn_purge = QPushButton("⏺  HOLD TO PURGE")
-        self.btn_purge.setStyleSheet(
-            "QPushButton{background-color:#5a3a00;color:#f5a623;"
-            "border:1px solid #f5a623;border-radius:4px;"
-            "padding:6px;font-family:'Noto Sans',Arial,sans-serif;"
-            "font-size:10px;font-weight:bold;}"
-            "QPushButton:pressed{background-color:#f5a623;color:#000;}")
+        theme_manager.register_widget(
+            self.btn_purge, lambda p: (
+                f"QPushButton{{background-color:{_darken(p['amber'], 130)};"
+                f"color:{p['amber']};border:1px solid {p['amber']};"
+                f"border-radius:4px;padding:6px;"
+                f"font-family:'Noto Sans',Arial,sans-serif;"
+                f"font-size:10px;font-weight:bold;}}"
+                f"QPushButton:pressed{{background-color:{p['amber']};"
+                f"color:#000;}}"))
         self.btn_purge.setMinimumHeight(32)
         self.btn_purge.pressed.connect(self._purge_start)
         self.btn_purge.released.connect(self._purge_stop)
@@ -530,13 +547,17 @@ class DetectionPanelRGB(QWidget):
         # Update model label to reflect actual loaded state
         if self._engine.stub_mode:
             self.lbl_model.setText("No model loaded  (stub mode)")
-            self.lbl_model.setStyleSheet(
-                "color:#f5a623;font-family:'Noto Sans',Arial,sans-serif;font-size:10px;")
+            theme_manager.register_widget(
+                self.lbl_model, lambda p: (
+                    f"color:{p['amber']};font-family:'Noto Sans',Arial,sans-serif;"
+                    f"font-size:10px;"))
         else:
             model_path = cfg.model.get_model_path(cfg.session.detection_mode)
             self.lbl_model.setText(f"✓  {model_path.name}")
-            self.lbl_model.setStyleSheet(
-                "color:#00c896;font-family:'Noto Sans',Arial,sans-serif;font-size:10px;")
+            theme_manager.register_widget(
+                self.lbl_model, lambda p: (
+                    f"color:{p['green']};font-family:'Noto Sans',Arial,sans-serif;"
+                    f"font-size:10px;"))
 
         # ROSBridge — receives Husky odometry via UDP.
         # Uses its own NetworkConfig (from detection_config, not RGBConfig).
@@ -748,9 +769,10 @@ class DetectionPanelRGB(QWidget):
             self._engine._load_model()
             if self._engine.ready:
                 self.lbl_model.setText(f"Model: {_P(path).name}")
-                self.lbl_model.setStyleSheet(
-                    "color:#00c896;font-family:'Noto Sans',Arial,sans-serif;"
-                    "font-size:10px;")
+                theme_manager.register_widget(
+                    self.lbl_model, lambda p: (
+                        f"color:{p['green']};font-family:'Noto Sans',Arial,sans-serif;"
+                        f"font-size:10px;"))
                 self.shared_log.log(
                     "DETECT", f"Model loaded: {_P(path).name}", "ok")
             else:
@@ -919,28 +941,31 @@ class DetectionPanelRGB(QWidget):
                 zone_counts[wi] = (zone.counter, zone.threshold)
 
             for i, (led, cnt, dl) in enumerate(self._zone_widgets):
-                led.set_state(spray_states[i],
-                              color_on="#00c896",
-                              color_off="#2a2f3d")
+                led.set_state(spray_states[i], role="green")
                 c, th = zone_counts[i]
                 cnt.setText(f"{c}/{th}")
                 dets = zone_dets[i]
+                # Hot per-frame path -- read the palette directly (cheap
+                # dict lookup) instead of theme_manager.register_widget()
+                # (which does an O(n) dedup scan) on every single frame.
+                # Still zero hardcoded colors; just re-reads the current
+                # theme each frame rather than being event-driven, which
+                # is fine since this loop already runs continuously.
+                p = theme_manager.palette()
                 if dets:
                     dl.setText(", ".join(
                         d.class_name for d in dets[:2]))
                     dl.setStyleSheet(
-                        "color:#00c896;font-size:9px;"
-                        "font-family:'Noto Sans',Arial,sans-serif;")
+                        f"color:{p['green']};font-size:9px;"
+                        f"font-family:'Noto Sans',Arial,sans-serif;")
                 else:
                     dl.setText("--")
                     dl.setStyleSheet(
-                        "color:#6070a0;font-size:9px;"
-                        "font-family:'Noto Sans',Arial,sans-serif;")
+                        f"color:{p['dim']};font-size:9px;"
+                        f"font-family:'Noto Sans',Arial,sans-serif;")
 
             for i, nl in enumerate(self._nozzle_leds):
-                nl.set_state(spray_states[i],
-                             color_on="#00c896",
-                             color_off="#2a2f3d")
+                nl.set_state(spray_states[i], role="green")
 
             self.lbl_fps.setText(f"FPS: {self._fps:.1f}")
             self.lbl_inf.setText(
@@ -1110,9 +1135,10 @@ class DetectionPanelRGB(QWidget):
         self.lbl_last_event.setText(
             f"{event.zone_name} | {names} | "
             f"conf={conf:.2f} | {ts}")
-        self.lbl_last_event.setStyleSheet(
-            "color:#00c896;font-size:10px;"
-            "font-family:'Noto Sans',Arial,sans-serif;")
+        theme_manager.register_widget(
+            self.lbl_last_event, lambda p: (
+                f"color:{p['green']};font-size:10px;"
+                f"font-family:'Noto Sans',Arial,sans-serif;"))
         self.shared_log.log(
             "DETECT",
             f"Spray: {event.zone_name} | {names} | {conf:.2f}",
@@ -1186,12 +1212,13 @@ class DetectionPanelRGB(QWidget):
                     pass
 
             self.lbl_pump_state.setText("PUMP  ENABLED ●")
-            self.lbl_pump_state.setStyleSheet(
-                "color:#00c896;font-family:'Noto Sans',Arial,sans-serif;"
-                "font-size:10px;font-weight:bold;")
-            self.led_pump.set_state(True, color_on="#00c896")
+            theme_manager.register_widget(
+                self.lbl_pump_state, lambda p: (
+                    f"color:{p['green']};font-family:'Noto Sans',Arial,sans-serif;"
+                    f"font-size:10px;font-weight:bold;"))
+            self.led_pump.set_state(True, role="green")
             self.btn_pump_enable.setText("⛔  DISABLE PUMP")
-            self.btn_pump_enable.setStyleSheet(BTN_RED)
+            theme_manager.register_button(self.btn_pump_enable, "red")
             self.shared_log.log(
                 "DETECT", "Pump ENABLED — auto-spray armed", "ok")
         else:
@@ -1210,12 +1237,13 @@ class DetectionPanelRGB(QWidget):
                     pass
 
             self.lbl_pump_state.setText("PUMP  DISABLED")
-            self.lbl_pump_state.setStyleSheet(
-                "color:#e84545;font-family:'Noto Sans',Arial,sans-serif;"
-                "font-size:10px;font-weight:bold;")
+            theme_manager.register_widget(
+                self.lbl_pump_state, lambda p: (
+                    f"color:{p['red']};font-family:'Noto Sans',Arial,sans-serif;"
+                    f"font-size:10px;font-weight:bold;"))
             self.led_pump.set_state(False)
             self.btn_pump_enable.setText("⚡  ENABLE PUMP")
-            self.btn_pump_enable.setStyleSheet(BTN_GREEN)
+            theme_manager.register_button(self.btn_pump_enable, "green")
             self.shared_log.log(
                 "DETECT", "Pump DISABLED — auto-spray blocked", "warn")
 
