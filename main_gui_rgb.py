@@ -144,7 +144,7 @@ class MainWindow(QMainWindow):
         self.tab2 = DetectionTab(
             self.camera, self.nav_detection, self.gantry,
             acq=self.acq)
-        self.tab3 = AnalysisTab(self.camera)
+        self.tab3 = AnalysisTab(self.gantry, self.tab2.detect)
 
         # ── Cross-tab movement lock ─────────────────────────────
         # Data Collection and Detection each drive the Husky through
@@ -164,7 +164,7 @@ class MainWindow(QMainWindow):
         self.main_tabs.addTab(
             self.tab2, "🎯  Detection")
         self.main_tabs.addTab(
-            self.tab3, "📊  Data Analysis")
+            self.tab3, "📊  Session Analysis")
         self.main_tabs.addTab(
             self._future_tab("Tab 4"), "🔬  Future")
         self.main_tabs.addTab(

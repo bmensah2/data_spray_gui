@@ -189,6 +189,14 @@ class DetectionPanelRGB(QWidget):
     """
 
     overlay_ready = pyqtSignal(object)
+    # Emitted with the SprayEvent every time a real spray trigger fires
+    # (same event that reaches EventLogger via _on_spray_event). Lets
+    # other tabs -- Analysis tab's live event feed -- observe spray
+    # events without needing a reference into ActuationController.
+    spray_event_signal = pyqtSignal(object)
+    # Emitted with the session_id whenever a new detection session
+    # starts (ARM), so listeners can reset any per-session UI state.
+    session_started = pyqtSignal(str)
 
     def __init__(self, shared_log: UnifiedLog,
                  camera,
@@ -549,6 +557,7 @@ class DetectionPanelRGB(QWidget):
             f"gui_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}"
             f"_{cfg.session.detection_mode.value}"
         )
+        self.session_started.emit(session_id)
 
         # EventLogger — real per-event research record (JSONL/CSV/
         # GeoJSON/summary). Session metadata JSON is written immediately
@@ -1108,6 +1117,7 @@ class DetectionPanelRGB(QWidget):
             "DETECT",
             f"Spray: {event.zone_name} | {names} | {conf:.2f}",
             "ok")
+        self.spray_event_signal.emit(event)
 
         if self._logger is not None:
             try:
@@ -1121,6 +1131,28 @@ class DetectionPanelRGB(QWidget):
                     "DETECT", f"⚠ Event logging failed: {e}", "error")
                 logging.error(
                     f"EventLogger.log_event failed: {e}", exc_info=True)
+
+    # ── Public status accessors (for other panels, e.g. Analysis tab) ──
+
+    def get_actuation_status(self):
+        """Return ActuationController.get_status() dict, or None if
+        detection isn't armed / no controller exists right now."""
+        if self._actuation is not None:
+            try:
+                return self._actuation.get_status()
+            except Exception:
+                return None
+        return None
+
+    def get_husky_status(self):
+        """Return ROSBridge.get_status() dict, or None if detection
+        isn't armed / no bridge exists right now."""
+        if self._odom is not None:
+            try:
+                return self._odom.get_status()
+            except Exception:
+                return None
+        return None
 
     def _on_static_toggle(self, state):
         from PyQt5.QtCore import Qt as _Qt
