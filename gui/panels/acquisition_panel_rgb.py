@@ -43,11 +43,8 @@ from PyQt5.QtWidgets import (
 )
 from PyQt5.QtCore import Qt, QTimer
 
-from gui.style import (
-    BTN_BLUE, BTN_GREEN, BTN_RED, BTN_AMBER,
-    BTN_DIM_GREEN, BTN_DIM_RED,
-    _divider, _muted, _sec, _scroll
-)
+from gui.style import _divider, _muted, _sec, _scroll
+from gui.theme_manager import theme_manager, _darken, _lighten
 from gui.shared_log import UnifiedLog
 
 
@@ -256,18 +253,18 @@ class CameraSettingsWidget(QWidget):
         btn_row = QHBoxLayout()
 
         self.btn_refresh = QPushButton("↻  Read from camera")
-        self.btn_refresh.setStyleSheet(BTN_BLUE)
+        theme_manager.register_button(self.btn_refresh, "blue")
         self.btn_refresh.clicked.connect(self._refresh_all)
         btn_row.addWidget(self.btn_refresh)
 
         self.btn_apply = QPushButton("✓  Apply to camera")
-        self.btn_apply.setStyleSheet(BTN_GREEN)
+        theme_manager.register_button(self.btn_apply, "green")
         self.btn_apply.setMinimumHeight(30)
         self.btn_apply.clicked.connect(self._apply_all)
         btn_row.addWidget(self.btn_apply)
 
         self.btn_reset = QPushButton("↺  Reset defaults")
-        self.btn_reset.setStyleSheet(BTN_AMBER)
+        theme_manager.register_button(self.btn_reset, "amber")
         self.btn_reset.clicked.connect(self._reset_defaults)
         btn_row.addWidget(self.btn_reset)
         btn_row.addStretch()
@@ -277,18 +274,23 @@ class CameraSettingsWidget(QWidget):
         # ── Lighting presets ──────────────────────────────────
         lay.addWidget(_divider())
         preset_lbl = QLabel("Quick Presets:")
-        preset_lbl.setStyleSheet(
-            "color:#8090a8;font-size:9px;font-family:'Noto Sans',Arial,sans-serif;")
+        theme_manager.register_widget(
+            preset_lbl, lambda p: (
+                f"color:{p['muted']};font-size:9px;"
+                f"font-family:'Noto Sans',Arial,sans-serif;"))
         lay.addWidget(preset_lbl)
 
         preset_row = QHBoxLayout()
 
         btn_outdoor = QPushButton("🌤  Outdoor / Field")
-        btn_outdoor.setStyleSheet(
-            "QPushButton{background:#1a3a2a;color:#60d090;"
-            "border:1px solid #2a6a4a;border-radius:4px;"
-            "padding:5px 10px;font-family:'Noto Sans',Arial,sans-serif;font-size:10px;}"
-            "QPushButton:hover{background:#2a4a3a;}")
+        theme_manager.register_widget(
+            btn_outdoor, lambda p: (
+                f"QPushButton{{background:{_darken(p['green'],45)};"
+                f"color:{_lighten(p['green'],10)};"
+                f"border:1px solid {_darken(p['green'],25)};border-radius:4px;"
+                f"padding:5px 10px;font-family:'Noto Sans',Arial,sans-serif;"
+                f"font-size:10px;}}"
+                f"QPushButton:hover{{background:{_darken(p['green'],35)};}}"))
         btn_outdoor.setToolTip(
             "Outdoor / direct sunlight\n"
             "exposure=5  brightness=-10  gamma=150  wb=5500")
@@ -296,11 +298,14 @@ class CameraSettingsWidget(QWidget):
         preset_row.addWidget(btn_outdoor)
 
         btn_cloudy = QPushButton("☁  Cloudy / Shade")
-        btn_cloudy.setStyleSheet(
-            "QPushButton{background:#1a2a3a;color:#80b0d0;"
-            "border:1px solid #2a4a6a;border-radius:4px;"
-            "padding:5px 10px;font-family:'Noto Sans',Arial,sans-serif;font-size:10px;}"
-            "QPushButton:hover{background:#2a3a4a;}")
+        theme_manager.register_widget(
+            btn_cloudy, lambda p: (
+                f"QPushButton{{background:{_darken(p['blue'],45)};"
+                f"color:{_lighten(p['blue'],10)};"
+                f"border:1px solid {_darken(p['blue'],25)};border-radius:4px;"
+                f"padding:5px 10px;font-family:'Noto Sans',Arial,sans-serif;"
+                f"font-size:10px;}}"
+                f"QPushButton:hover{{background:{_darken(p['blue'],35)};}}"))
         btn_cloudy.setToolTip(
             "Overcast / cloudy / shade\n"
             "exposure=80  brightness=0  gamma=180  wb=6000")
@@ -308,11 +313,14 @@ class CameraSettingsWidget(QWidget):
         preset_row.addWidget(btn_cloudy)
 
         btn_indoor = QPushButton("💡  Indoor / Lab")
-        btn_indoor.setStyleSheet(
-            "QPushButton{background:#2a2a1a;color:#d0c060;"
-            "border:1px solid #5a5a2a;border-radius:4px;"
-            "padding:5px 10px;font-family:'Noto Sans',Arial,sans-serif;font-size:10px;}"
-            "QPushButton:hover{background:#3a3a2a;}")
+        theme_manager.register_widget(
+            btn_indoor, lambda p: (
+                f"QPushButton{{background:{_darken(p['amber'],55)};"
+                f"color:{_lighten(p['amber'],5)};"
+                f"border:1px solid {_darken(p['amber'],30)};border-radius:4px;"
+                f"padding:5px 10px;font-family:'Noto Sans',Arial,sans-serif;"
+                f"font-size:10px;}}"
+                f"QPushButton:hover{{background:{_darken(p['amber'],45)};}}"))
         btn_indoor.setToolTip(
             "Indoor lab / bench testing\n"
             "exposure=300  brightness=0  gamma=214  wb=5000")
@@ -601,20 +609,26 @@ class AcquisitionPanelRGB(QWidget):
 
         sg.addWidget(_muted("Left device:"),  0, 0)
         self.lbl_left_dev = QLabel("—")
-        self.lbl_left_dev.setStyleSheet(
-            "color:#60c0a0;font-size:9px;font-family:'Noto Sans',Arial,sans-serif;")
+        theme_manager.register_widget(
+            self.lbl_left_dev, lambda p: (
+                f"color:{p['green']};font-size:9px;"
+                f"font-family:'Noto Sans',Arial,sans-serif;"))
         sg.addWidget(self.lbl_left_dev, 0, 1)
 
         sg.addWidget(_muted("Right device:"), 1, 0)
         self.lbl_right_dev = QLabel("—")
-        self.lbl_right_dev.setStyleSheet(
-            "color:#60c0a0;font-size:9px;font-family:'Noto Sans',Arial,sans-serif;")
+        theme_manager.register_widget(
+            self.lbl_right_dev, lambda p: (
+                f"color:{p['green']};font-size:9px;"
+                f"font-family:'Noto Sans',Arial,sans-serif;"))
         sg.addWidget(self.lbl_right_dev, 1, 1)
 
         sg.addWidget(_muted("Resolution:"),   2, 0)
         self.lbl_res = QLabel("1920 × 1080  @  30fps  MJPG")
-        self.lbl_res.setStyleSheet(
-            "color:#8090a8;font-size:9px;font-family:'Noto Sans',Arial,sans-serif;")
+        theme_manager.register_widget(
+            self.lbl_res, lambda p: (
+                f"color:{p['muted']};font-size:9px;"
+                f"font-family:'Noto Sans',Arial,sans-serif;"))
         sg.addWidget(self.lbl_res, 2, 1)
 
         lay.addWidget(status_grp)
@@ -623,7 +637,7 @@ class AcquisitionPanelRGB(QWidget):
         sync_row = QHBoxLayout()
         self.btn_sync_lr = QPushButton(
             "⇄  Copy LEFT settings → RIGHT")
-        self.btn_sync_lr.setStyleSheet(BTN_BLUE)
+        theme_manager.register_button(self.btn_sync_lr, "blue")
         self.btn_sync_lr.clicked.connect(self._sync_left_to_right)
         sync_row.addWidget(self.btn_sync_lr)
         sync_row.addStretch()
@@ -697,13 +711,14 @@ class AcquisitionPanelRGB(QWidget):
         mg.addWidget(_muted("Save to:"), 3, 0)
         folder_row = QHBoxLayout()
         self.lbl_folder = QLabel(str(BASE_PATH))
-        self.lbl_folder.setStyleSheet(
-            "color:#6080a0;font-size:9px;"
-            "font-family:'Noto Sans',Arial,sans-serif;")
+        theme_manager.register_widget(
+            self.lbl_folder, lambda p: (
+                f"color:{p['dim']};font-size:9px;"
+                f"font-family:'Noto Sans',Arial,sans-serif;"))
         self.lbl_folder.setWordWrap(True)
         folder_row.addWidget(self.lbl_folder, stretch=1)
         btn_browse = QPushButton("Browse")
-        btn_browse.setStyleSheet(BTN_BLUE)
+        theme_manager.register_button(btn_browse, "blue")
         btn_browse.setFixedWidth(60)
         btn_browse.clicked.connect(self._browse_folder)
         folder_row.addWidget(btn_browse)
@@ -767,14 +782,15 @@ class AcquisitionPanelRGB(QWidget):
         lay.addWidget(self.lbl_img_count)
 
         self.lbl_last_saved = QLabel("—")
-        self.lbl_last_saved.setStyleSheet(
-            "color:#6080a0;font-size:9px;"
-            "font-family:'Noto Sans',Arial,sans-serif;")
+        theme_manager.register_widget(
+            self.lbl_last_saved, lambda p: (
+                f"color:{p['dim']};font-size:9px;"
+                f"font-family:'Noto Sans',Arial,sans-serif;"))
         self.lbl_last_saved.setWordWrap(True)
         lay.addWidget(self.lbl_last_saved)
 
         btn_cap = QPushButton("📷  CAPTURE IMAGE")
-        btn_cap.setStyleSheet(BTN_GREEN)
+        theme_manager.register_button(btn_cap, "green")
         btn_cap.setMinimumHeight(36)
         btn_cap.clicked.connect(self._capture_image)
         lay.addWidget(btn_cap)
@@ -816,18 +832,18 @@ class AcquisitionPanelRGB(QWidget):
 
         btn_row = QHBoxLayout()
         self.btn_auto_start = QPushButton("▶  START")
-        self.btn_auto_start.setStyleSheet(BTN_GREEN)
+        theme_manager.register_button(self.btn_auto_start, "green")
         self.btn_auto_start.clicked.connect(self._auto_start)
         btn_row.addWidget(self.btn_auto_start)
 
         self.btn_auto_pause = QPushButton("⏸  PAUSE")
-        self.btn_auto_pause.setStyleSheet(BTN_AMBER)
+        theme_manager.register_button(self.btn_auto_pause, "amber")
         self.btn_auto_pause.setEnabled(False)
         self.btn_auto_pause.clicked.connect(self._auto_pause)
         btn_row.addWidget(self.btn_auto_pause)
 
         self.btn_auto_stop = QPushButton("⏹  STOP")
-        self.btn_auto_stop.setStyleSheet(BTN_DIM_RED)
+        theme_manager.register_button(self.btn_auto_stop, "dim_red")
         self.btn_auto_stop.setEnabled(False)
         self.btn_auto_stop.clicked.connect(self._auto_stop)
         btn_row.addWidget(self.btn_auto_stop)
@@ -882,19 +898,20 @@ class AcquisitionPanelRGB(QWidget):
         lay.addWidget(vid_lbl_grp)
 
         self.lbl_vid_status = QLabel("Not recording")
-        self.lbl_vid_status.setStyleSheet(
-            "color:#8090a8;font-size:10px;"
-            "font-family:'Noto Sans',Arial,sans-serif;")
+        theme_manager.register_widget(
+            self.lbl_vid_status, lambda p: (
+                f"color:{p['muted']};font-size:10px;"
+                f"font-family:'Noto Sans',Arial,sans-serif;"))
         lay.addWidget(self.lbl_vid_status)
 
         vid_btn_row = QHBoxLayout()
         self.btn_vid_start = QPushButton("⏺  START REC")
-        self.btn_vid_start.setStyleSheet(BTN_RED)
+        theme_manager.register_button(self.btn_vid_start, "red")
         self.btn_vid_start.clicked.connect(self._vid_start)
         vid_btn_row.addWidget(self.btn_vid_start)
 
         self.btn_vid_stop = QPushButton("⏹  STOP REC")
-        self.btn_vid_stop.setStyleSheet(BTN_DIM_RED)
+        theme_manager.register_button(self.btn_vid_stop, "dim_red")
         self.btn_vid_stop.setEnabled(False)
         self.btn_vid_stop.clicked.connect(self._vid_stop)
         vid_btn_row.addWidget(self.btn_vid_stop)
@@ -1175,9 +1192,10 @@ class AcquisitionPanelRGB(QWidget):
         self.btn_vid_stop.setEnabled(True)
         self.lbl_vid_status.setText(
             f"Recording  —  {ts}  [{', '.join(self._vid_writers)}]")
-        self.lbl_vid_status.setStyleSheet(
-            "color:#e84545;font-size:10px;"
-            "font-family:'Noto Sans',Arial,sans-serif;font-weight:bold;")
+        theme_manager.register_widget(
+            self.lbl_vid_status, lambda p: (
+                f"color:{p['red']};font-size:10px;"
+                f"font-family:'Noto Sans',Arial,sans-serif;font-weight:bold;"))
         self.shared_log.log(
             "CAMERA",
             f"Video recording started: {list(self._vid_writers)}",
@@ -1212,9 +1230,10 @@ class AcquisitionPanelRGB(QWidget):
         self.btn_vid_start.setEnabled(True)
         self.btn_vid_stop.setEnabled(False)
         self.lbl_vid_status.setText("Not recording")
-        self.lbl_vid_status.setStyleSheet(
-            "color:#8090a8;font-size:10px;"
-            "font-family:'Noto Sans',Arial,sans-serif;")
+        theme_manager.register_widget(
+            self.lbl_vid_status, lambda p: (
+                f"color:{p['muted']};font-size:10px;"
+                f"font-family:'Noto Sans',Arial,sans-serif;"))
         self.shared_log.log(
             "CAMERA", "Video recording stopped", "ok")
 
