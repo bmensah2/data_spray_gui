@@ -97,6 +97,28 @@ def _custom_btn(aben_qss: str, build_fn):
     return _style
 
 
+def _style_input(widget):
+    """Apply the standard themed input-box QSS (QLineEdit) used
+    throughout this file wherever a plain text input needs
+    input_bg/text/border styling."""
+    theme_manager.register_widget(
+        widget, lambda p: (
+            f"background:{p['input_bg']};color:{p['text']};"
+            f"border:1px solid {p['border']};border-radius:3px;"
+            f"font-family:'Noto Sans',Arial,sans-serif;font-size:9px;padding:2px;"))
+
+
+def _style_status_label(lbl, palette_key, bold=True):
+    """Apply themed status-text styling (spray mission RUNNING/PAUSED/
+    Complete/Stopped labels) -- re-register each time the label's
+    state/color changes, same pattern as gantry_panel.py's buttons."""
+    weight = "font-weight:bold;" if bold else ""
+    theme_manager.register_widget(
+        lbl, lambda p, k=palette_key: (
+            f"color:{p[k]};font-family:'Noto Sans',Arial,sans-serif;"
+            f"font-size:9px;{weight}"))
+
+
 # ─────────────────────────────────────────────────────────────
 #  NAVIGATION PANEL
 # ─────────────────────────────────────────────────────────────
@@ -964,11 +986,12 @@ class NavigationPanelRGB(QWidget):
         threads — the GUI just starts/pauses/stops it and shows progress.
         """
         grp = QGroupBox("Spray Mission  (RGB)")
-        grp.setStyleSheet(
-            "QGroupBox{border:1px solid #2a5a3a;"
-            "border-radius:4px;margin-top:8px;"
-            "color:#60c090;font-size:10px;font-weight:bold;}"
-            "QGroupBox::title{subcontrol-origin:margin;padding:0 4px;}")
+        theme_manager.register_widget(
+            grp, lambda p: (
+                f"QGroupBox{{border:1px solid {_darken(p['green'], 30)};"
+                f"border-radius:4px;margin-top:8px;"
+                f"color:{p['green']};font-size:10px;font-weight:bold;}}"
+                f"QGroupBox::title{{subcontrol-origin:margin;padding:0 4px;}}"))
         lay = QVBoxLayout(grp)
         lay.setSpacing(6)
         lay.setContentsMargins(8, 10, 8, 8)
@@ -981,10 +1004,7 @@ class NavigationPanelRGB(QWidget):
         self.sm_model = QLineEdit(
             "/media/pagsun/Transcend/phd_project/"
             "emeet_dual_cam/models/weed_rgb.pt")
-        self.sm_model.setStyleSheet(
-            "background:#1a1e2e;color:#e8eaf0;"
-            "border:1px solid #3a4055;border-radius:3px;"
-            "font-family:'Noto Sans',Arial,sans-serif;font-size:9px;padding:2px;")
+        _style_input(self.sm_model)
         cfg_grid.addWidget(self.sm_model, 0, 1, 1, 2)
         btn_browse_model = QPushButton("Browse")
         btn_browse_model.setFixedWidth(60)
@@ -1011,18 +1031,12 @@ class NavigationPanelRGB(QWidget):
         cfg_grid.addWidget(_muted("Field ID:"), 2, 0)
         self.sm_field_id = QLineEdit()
         self.sm_field_id.setPlaceholderText("e.g. Wilkin_Plot_A")
-        self.sm_field_id.setStyleSheet(
-            "background:#1a1e2e;color:#e8eaf0;"
-            "border:1px solid #3a4055;border-radius:3px;"
-            "font-family:'Noto Sans',Arial,sans-serif;font-size:9px;padding:2px;")
+        _style_input(self.sm_field_id)
         cfg_grid.addWidget(self.sm_field_id, 2, 1)
 
         cfg_grid.addWidget(_muted("Port:"), 2, 2)
         self.sm_port = QLineEdit("/dev/ttyACM0")
-        self.sm_port.setStyleSheet(
-            "background:#1a1e2e;color:#e8eaf0;"
-            "border:1px solid #3a4055;border-radius:3px;"
-            "font-family:'Noto Sans',Arial,sans-serif;font-size:9px;padding:2px;")
+        _style_input(self.sm_port)
         cfg_grid.addWidget(self.sm_port, 2, 3)
 
         lay.addLayout(cfg_grid)
@@ -1030,12 +1044,16 @@ class NavigationPanelRGB(QWidget):
         # ── Flags ─────────────────────────────────────────────
         flag_row = QHBoxLayout()
         self.sm_dry_run = QCheckBox("Dry run (log only)")
-        self.sm_dry_run.setStyleSheet(
-            "color:#f5a623;font-family:'Noto Sans',Arial,sans-serif;font-size:9px;")
+        theme_manager.register_widget(
+            self.sm_dry_run, lambda p: (
+                f"color:{p['amber']};font-family:'Noto Sans',Arial,sans-serif;"
+                f"font-size:9px;"))
         flag_row.addWidget(self.sm_dry_run)
         self.sm_dummy = QCheckBox("Dummy detect (timing test)")
-        self.sm_dummy.setStyleSheet(
-            "color:#f5a623;font-family:'Noto Sans',Arial,sans-serif;font-size:9px;")
+        theme_manager.register_widget(
+            self.sm_dummy, lambda p: (
+                f"color:{p['amber']};font-family:'Noto Sans',Arial,sans-serif;"
+                f"font-size:9px;"))
         flag_row.addWidget(self.sm_dummy)
         flag_row.addStretch()
         lay.addLayout(flag_row)
@@ -1085,9 +1103,7 @@ class NavigationPanelRGB(QWidget):
 
         # ── Status + progress ──────────────────────────────────
         self.lbl_sm_status = QLabel("Ready")
-        self.lbl_sm_status.setStyleSheet(
-            "color:#8090a8;font-family:'Noto Sans',Arial,sans-serif;"
-            "font-size:9px;")
+        _style_status_label(self.lbl_sm_status, 'muted', bold=False)
         lay.addWidget(self.lbl_sm_status)
 
         self.sm_progress = QProgressBar()
@@ -1101,9 +1117,11 @@ class NavigationPanelRGB(QWidget):
         self.sm_log.setReadOnly(True)
         self.sm_log.setMaximumBlockCount(80)
         self.sm_log.setFixedHeight(80)
-        self.sm_log.setStyleSheet(
-            "background:#050810;color:#6070a0;"
-            "font-family:'Noto Sans',Arial,sans-serif;font-size:9px;border:none;")
+        theme_manager.register_widget(
+            self.sm_log, lambda p: (
+                f"background:{p['bg0']};color:{p['dim']};"
+                f"font-family:'Noto Sans',Arial,sans-serif;font-size:9px;"
+                f"border:none;"))
         lay.addWidget(self.sm_log)
 
         lay.addWidget(_divider())
@@ -1114,10 +1132,7 @@ class NavigationPanelRGB(QWidget):
         self.sm_session_path = QLineEdit()
         self.sm_session_path.setPlaceholderText(
             "auto-filled after mission ends")
-        self.sm_session_path.setStyleSheet(
-            "background:#1a1e2e;color:#e8eaf0;"
-            "border:1px solid #3a4055;border-radius:3px;"
-            "font-family:'Noto Sans',Arial,sans-serif;font-size:9px;padding:2px;")
+        _style_input(self.sm_session_path)
         rep_row.addWidget(self.sm_session_path, stretch=1)
         btn_browse_session = QPushButton("Browse")
         btn_browse_session.setFixedWidth(60)
@@ -1236,9 +1251,7 @@ class NavigationPanelRGB(QWidget):
         self.sm_progress.setValue(0)
         self.sm_progress.setFormat("Running…")
         self.lbl_sm_status.setText("● RUNNING")
-        self.lbl_sm_status.setStyleSheet(
-            "color:#00c896;font-family:'Noto Sans',Arial,sans-serif;"
-            "font-size:9px;font-weight:bold;")
+        _style_status_label(self.lbl_sm_status, 'green')
 
         # Poll output every 400ms
         self._spray_timer = QTimer()
@@ -1262,18 +1275,14 @@ class NavigationPanelRGB(QWidget):
                 self._spray_paused = True
                 self.btn_sm_pause.setText("▶  CONTINUE")
                 self.lbl_sm_status.setText("⏸  PAUSED")
-                self.lbl_sm_status.setStyleSheet(
-                    "color:#f5a623;font-family:'Noto Sans',Arial,sans-serif;"
-                    "font-size:9px;font-weight:bold;")
+                _style_status_label(self.lbl_sm_status, 'amber')
                 self.shared_log.log("SPRAY", "Mission PAUSED", "warn")
             else:
                 self._spray_proc.send_signal(signal.SIGCONT)
                 self._spray_paused = False
                 self.btn_sm_pause.setText("⏸  PAUSE")
                 self.lbl_sm_status.setText("● RUNNING")
-                self.lbl_sm_status.setStyleSheet(
-                    "color:#00c896;font-family:'Noto Sans',Arial,sans-serif;"
-                    "font-size:9px;font-weight:bold;")
+                _style_status_label(self.lbl_sm_status, 'green')
                 self.shared_log.log("SPRAY", "Mission RESUMED", "info")
         except Exception as e:
             self.shared_log.log(
@@ -1376,16 +1385,12 @@ class NavigationPanelRGB(QWidget):
             self.sm_progress.setValue(100)
             self.sm_progress.setFormat("Complete ✓")
             self.lbl_sm_status.setText("✓ Mission complete")
-            self.lbl_sm_status.setStyleSheet(
-                "color:#00c896;font-family:'Noto Sans',Arial,sans-serif;"
-                "font-size:9px;font-weight:bold;")
+            _style_status_label(self.lbl_sm_status, 'green')
             self.shared_log.log("SPRAY", "Mission COMPLETE", "ok")
         else:
             self.sm_progress.setFormat("Stopped")
             self.lbl_sm_status.setText("⏹ Stopped")
-            self.lbl_sm_status.setStyleSheet(
-                "color:#8090a8;font-family:'Noto Sans',Arial,sans-serif;"
-                "font-size:9px;")
+            _style_status_label(self.lbl_sm_status, 'muted', bold=False)
             self.shared_log.log("SPRAY", "Mission STOPPED", "warn")
 
         # Auto-fill session path if found during polling
