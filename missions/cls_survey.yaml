@@ -1,0 +1,19 @@
+# cls_survey.yaml
+# ABEN Field Mission — CLS (Cercospora Leaf Spot) Survey
+# July-August deployment  |  Wilkin County MN
+
+name: cls_survey_pattern
+description: 5-row CLS survey, 15m rows, 0.762m lane width
+return_home: true
+
+default_linear_speed:  0.1
+default_angular_speed: 0.1
+
+steps:
+  - forward: 0.5
+    label: "Row 1"
+  - turn: -5
+  - forward: 0.5
+    label: "Lane shift"
+  - turn: -5
+

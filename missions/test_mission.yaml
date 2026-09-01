@@ -1,0 +1,22 @@
+# test_mission.yaml
+# ABEN Field Mission — Lab/bench test (small distances)
+# Use this to validate field_nav.py before field deployment
+
+name: lab_test
+description: Small-scale test — 1m rows, 0.5m lane width
+return_home: true
+
+default_linear_speed:  0.1
+default_angular_speed: 0.2
+
+steps:
+  - forward: 1.0
+    label: "Row 1"
+  - turn: -90
+    label: "Turn right"
+  - forward: 1.0
+    label: "Lane shift"
+  - turn: -90
+    label: "Turn right"
+  - forward: 1.0
+    label: "Row 2"

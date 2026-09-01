@@ -1,0 +1,33 @@
+# sugarbeet_rows.yaml
+# ABEN Field Mission — Boustrophedon Row Scan
+# Husky cpr-a200-0943  |  Wilkin County MN
+#
+# Pattern:
+#   Start → Row 1 (south) → turn → lane shift → turn
+#         → Row 2 (north) → turn → lane shift → turn
+#         → Row 3 (south) → return home
+#
+# Adjust row_length and lane_width to match your field.
+# turn: negative = right, positive = left
+
+name: sugarbeet_row_scan
+description: 3-row boustrophedon scan for weed/CLS data collection
+return_home: true
+
+# Default speeds — override per step if needed
+default_linear_speed:  0.1    # m/s  — slow for data collection
+default_angular_speed: 0.1    # rad/s — precise turns
+
+steps:
+  # ── Row 1 ────────────────────────────────────────────────
+  - forward: 0.50
+    label: "Row 1 — heading south"
+
+  # End-of-row U-turn (two 90° right turns with lane shift)
+  - turn: -5
+    label: "EORow turn 1"
+  - forward: 0.5             # lane width (30 in = 0.762 m)
+    label: "Lane shift 1→2"
+  - turn: -5
+    label: "EORow turn 2"
+
