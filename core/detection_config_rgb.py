@@ -206,6 +206,14 @@ class ZoneConfig:
     weed_spray_duration: float = 0.5
     cls_spray_duration:  float = 1.0
 
+    # Continuous-spray sanity guard (seconds). Not enforced as a hard
+    # cap -- a genuinely large/dense weed patch legitimately keeps a
+    # zone active this long or longer. But a nozzle open continuously
+    # past this threshold is unusual enough to be worth a loud log
+    # warning, since it could also mean a stuck/false detection is
+    # silently wasting herbicide/fungicide with nothing flagging it.
+    max_continuous_spray_warn_s: float = 5.0
+
     def cam1_zones(self) -> List[Tuple[int, int, int, int]]:
         """Return cam1 zone rects: [ZoneA, ZoneB1]."""
         return [

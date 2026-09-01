@@ -146,6 +146,15 @@ class ActuationController:
         self._nozzle_opened_at: Dict[int, float] = {}
         self._nozzle_pending_close: Dict[int, bool] = {}
 
+        # Continuous-spray sanity guard — see max_continuous_spray_warn_s
+        # docstring in detection_config_rgb.py. Tracks which nozzles have
+        # already been warned about for their CURRENT open period, so we
+        # log once per unusually-long spray, not once per frame.
+        self._max_continuous_warn_s = getattr(
+            cfg.zones, 'max_continuous_spray_warn_s', 5.0
+        )
+        self._nozzle_warned: Dict[int, bool] = {}
+
         # EStop tracking
         self._estop_active = False
         self._estop_thread = None
@@ -271,6 +280,7 @@ class ActuationController:
                 if not self._nozzle_state.get(nozzle_id, False):
                     self._set_nozzle(nozzle_id, True)
                     self._nozzle_opened_at[nozzle_id] = now
+                    self._nozzle_warned[nozzle_id] = False
                 # Active again (or still active) — cancel any pending close
                 self._nozzle_pending_close.pop(nozzle_id, None)
 
@@ -305,6 +315,29 @@ class ActuationController:
                     logging.debug(
                         f"Nozzle {nozzle_id+1} closed | "
                         f"floor reached (held {self._min_hold:.3f}s)"
+                    )
+
+            # ── Continuous-spray sanity guard ──────────────────
+            # A nozzle open unusually long is either a genuinely large
+            # weed patch (fine, keep spraying) or a stuck/false
+            # detection silently wasting chemical (not fine). Either
+            # way the operator should know — warn once per open period,
+            # don't force it closed.
+            for nozzle_id, is_on in self._nozzle_state.items():
+                if not is_on:
+                    continue
+                opened_at = self._nozzle_opened_at.get(nozzle_id)
+                if opened_at is None or self._nozzle_warned.get(nozzle_id):
+                    continue
+                open_duration = now - opened_at
+                if open_duration >= self._max_continuous_warn_s:
+                    self._nozzle_warned[nozzle_id] = True
+                    logging.warning(
+                        f"⚠ Nozzle {nozzle_id+1} has been continuously "
+                        f"open for {open_duration:.1f}s (guard threshold "
+                        f"{self._max_continuous_warn_s:.1f}s) — verify this "
+                        f"is a real weed patch and not a stuck/false "
+                        f"detection wasting {self._mode.value} chemical."
                     )
 
             # ── Generate SprayEvents for new triggers ─────────
@@ -346,6 +379,11 @@ class ActuationController:
 
         self._nozzle_state[nozzle_id] = on
         self._total_sprays += (1 if on else 0)
+        if not on:
+            # Physically closed — clear open-period bookkeeping so the
+            # next open period starts its floor/warn timers fresh.
+            self._nozzle_opened_at.pop(nozzle_id, None)
+            self._nozzle_warned.pop(nozzle_id, None)
 
         state_str = "ON " if on else "OFF"
         logging.info(
@@ -368,6 +406,7 @@ class ActuationController:
         # wins over guaranteeing a minimum dose).
         self._nozzle_opened_at.clear()
         self._nozzle_pending_close.clear()
+        self._nozzle_warned.clear()
 
         logging.info("All nozzles OFF")
 
@@ -789,6 +828,41 @@ if __name__ == '__main__':
     print(f"  dry_run={status['dry_run']} ✓")
     print(f"  mode={status['mode']} ✓")
     ctrl4.stop()
+    print()
+
+    # ── Test 5: Continuous-spray sanity guard fires once ──────
+    print("Test 5: Continuous-spray guard warns on unusually long hold")
+    cfg5 = get_weed_config()
+    cfg5.zones.max_continuous_spray_warn_s = 0.2  # shrink for a fast test
+    manager5 = ZoneManagerRGB(cfg5)
+    ctrl5 = ActuationController(cfg5, gantry=None)
+    ctrl5.start()
+
+    warn_records = []
+    class _WarnCapture(logging.Handler):
+        def emit(self, record):
+            if "continuously open" in record.getMessage():
+                warn_records.append(record.getMessage())
+    handler = _WarnCapture()
+    logging.getLogger().addHandler(handler)
+
+    # Trigger, then keep the detection present well past the guard threshold
+    for _ in range(4):
+        ctrl5.actuate(manager5.update(make_dual([det_a], [])))
+    assert ctrl5._nozzle_state[0] == True
+    assert len(warn_records) == 0, "Should not warn before threshold elapses"
+
+    time.sleep(cfg5.zones.max_continuous_spray_warn_s + 0.05)
+    # Still detecting — nozzle stays on, guard should now fire exactly once
+    ctrl5.actuate(manager5.update(make_dual([det_a], [])))
+    ctrl5.actuate(manager5.update(make_dual([det_a], [])))
+    assert ctrl5._nozzle_state[0] == True, "Should still be spraying — not a hard cap"
+    assert len(warn_records) == 1, f"Expected exactly 1 warning, got {len(warn_records)}"
+    print(f"  Nozzle still spraying past guard threshold (not a hard cap) ✓")
+    print(f"  Guard warned exactly once: {warn_records[0][:60]}... ✓")
+
+    logging.getLogger().removeHandler(handler)
+    ctrl5.stop()
     print()
 
     print("=" * 55)
