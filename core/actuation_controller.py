@@ -17,6 +17,13 @@ Safety rules enforced here:
   - Pump must be ON before any nozzle can open
   - Pump off auto-closes all nozzles (firmware safety, mirrored here)
   - Nozzle state only written on change (avoids flooding serial port)
+  - Minimum spray hold floor: once a nozzle opens, it stays open for
+    at least weed_spray_duration / cls_spray_duration seconds even if
+    the triggering detection disappears immediately (solenoid valves
+    need real time to fully open and deliver a usable dose). Spraying
+    continues past the floor for as long as the zone stays active —
+    this is a MINIMUM, not a fixed burst. EStop always overrides the
+    floor: an emergency stop closes nozzles immediately regardless.
 
 Author : Nana | NDSU / PhD Imaging System
 """
@@ -122,6 +129,22 @@ class ActuationController:
 
         # Track last-sent nozzle state to avoid redundant serial writes
         self._nozzle_state: Dict[int, bool] = {0: False, 1: False, 2: False}
+
+        # ── Minimum spray hold floor ────────────────────────────
+        # weed_spray_duration / cls_spray_duration are the minimum
+        # guaranteed valve-open time once a zone triggers, so a
+        # target that flickers out of detection immediately after
+        # triggering still gets a real, deliverable dose (matches
+        # standard practice: solenoid valves need tens-to-hundreds
+        # of ms to fully open and deliver droplets — see e.g.
+        # 20-200ms minimum pulse durations in published precision
+        # sprayer designs). If detection persists past this floor,
+        # the nozzle simply keeps spraying — this is NOT a fixed
+        # burst duration, it's a floor under the existing
+        # continuous/dwell-based spray behavior from zone_manager.
+        self._min_hold = cfg.zones.spray_duration(self._mode)
+        self._nozzle_opened_at: Dict[int, float] = {}
+        self._nozzle_pending_close: Dict[int, bool] = {}
 
         # EStop tracking
         self._estop_active = False
@@ -241,15 +264,48 @@ class ActuationController:
         new_events = []
 
         with self._lock:
+            now = time.time()
+
             # ── Nozzles ON ────────────────────────────────────
             for nozzle_id in decision.nozzles_to_fire:
                 if not self._nozzle_state.get(nozzle_id, False):
                     self._set_nozzle(nozzle_id, True)
+                    self._nozzle_opened_at[nozzle_id] = now
+                # Active again (or still active) — cancel any pending close
+                self._nozzle_pending_close.pop(nozzle_id, None)
 
-            # ── Nozzles OFF ───────────────────────────────────
+            # ── Nozzles OFF — enforced through the minimum hold floor ──
             for nozzle_id in decision.nozzles_to_stop:
                 if self._nozzle_state.get(nozzle_id, False):
+                    opened_at = self._nozzle_opened_at.get(nozzle_id, now)
+                    elapsed   = now - opened_at
+                    if elapsed >= self._min_hold:
+                        self._set_nozzle(nozzle_id, False)
+                        self._nozzle_pending_close.pop(nozzle_id, None)
+                        logging.debug(
+                            f"Nozzle {nozzle_id+1} closed | "
+                            f"actual hold={elapsed:.3f}s "
+                            f"(floor={self._min_hold:.3f}s)"
+                        )
+                    else:
+                        # Detection dropped before the floor — keep the
+                        # valve open, we'll close it as soon as the
+                        # floor is reached (checked below and on
+                        # subsequent actuate() calls).
+                        self._nozzle_pending_close[nozzle_id] = True
+
+            # Resolve any nozzles waiting only on the floor timer —
+            # covers the case where this frame's decision doesn't
+            # mention them again before the floor elapses.
+            for nozzle_id in list(self._nozzle_pending_close):
+                opened_at = self._nozzle_opened_at.get(nozzle_id, now)
+                if now - opened_at >= self._min_hold:
                     self._set_nozzle(nozzle_id, False)
+                    del self._nozzle_pending_close[nozzle_id]
+                    logging.debug(
+                        f"Nozzle {nozzle_id+1} closed | "
+                        f"floor reached (held {self._min_hold:.3f}s)"
+                    )
 
             # ── Generate SprayEvents for new triggers ─────────
             for zone_id in decision.new_triggers:
@@ -307,6 +363,12 @@ class ActuationController:
         for nid in self._nozzle_state:
             self._nozzle_state[nid] = False
 
+        # Clear hold-floor bookkeeping — an emergency/stop shutdown
+        # bypasses the minimum hold floor by design (safety always
+        # wins over guaranteeing a minimum dose).
+        self._nozzle_opened_at.clear()
+        self._nozzle_pending_close.clear()
+
         logging.info("All nozzles OFF")
 
     # ── EStop ─────────────────────────────────────────────────
@@ -322,30 +384,47 @@ class ActuationController:
         - If Husky bridge HAS connected and then loses heartbeat:
           treat as EStop — connection lost in the field = unsafe.
         - If Husky bridge is connected and /estop = True: immediate stop.
+
+        This loop must never die silently — it's the safety watchdog
+        for the whole session. Any exception polling ros_bridge is
+        caught, logged loudly, and the loop keeps running rather than
+        exiting; a crashed thread here would mean EStop stops being
+        enforced for the rest of the session with no visible warning.
         """
         husky_was_connected = False
 
         while self._running:
-            if self.ros_bridge is not None:
-                currently_connected = self.ros_bridge.is_connected()
+            try:
+                if self.ros_bridge is not None:
+                    currently_connected = self.ros_bridge.is_connected()
 
-                # Track first connection
-                if currently_connected and not husky_was_connected:
-                    husky_was_connected = True
-                    logging.info("✓ Husky bridge confirmed — EStop monitoring active")
+                    # Track first connection
+                    if currently_connected and not husky_was_connected:
+                        husky_was_connected = True
+                        logging.info("✓ Husky bridge confirmed — EStop monitoring active")
 
-                # Only enforce EStop after Husky has been seen at least once
-                if husky_was_connected:
-                    estop = self.ros_bridge.is_estop_active()
-                    if estop and not self._estop_active:
-                        logging.warning("⚠ ESTOP DETECTED — emergency shutdown")
-                        self._estop_active = True
-                        self._emergency_all_off()
-                    elif not estop and self._estop_active:
-                        logging.info("✓ EStop cleared")
-                        self._estop_active = False
+                    # Only enforce EStop after Husky has been seen at least once
+                    if husky_was_connected:
+                        estop = self.ros_bridge.is_estop_active()
+                        if estop and not self._estop_active:
+                            logging.warning("⚠ ESTOP DETECTED — emergency shutdown")
+                            self._estop_active = True
+                            self._emergency_all_off()
+                        elif not estop and self._estop_active:
+                            logging.info("✓ EStop cleared")
+                            self._estop_active = False
+            except Exception as e:
+                # Do not let the safety watchdog thread die. Surface
+                # this as loudly as possible — this is exactly the
+                # kind of failure that should never go unnoticed.
+                logging.error(
+                    f"⚠⚠ ESTOP MONITOR ERROR (thread still running, "
+                    f"but EStop status could not be checked this cycle): {e}"
+                )
 
             time.sleep(0.1)  # 10Hz poll — fast enough for safety
+
+        logging.info("EStop monitor thread exiting (controller stopped)")
 
     def _emergency_all_off(self):
         """Immediate hardware shutdown on EStop."""
@@ -409,10 +488,17 @@ class ActuationController:
     def manual_nozzle(self, nozzle_id: int, on: bool):
         """
         Manually control a nozzle — for testing and calibration.
-        Does NOT require armed state.
+        Does NOT require armed state, and bypasses the minimum
+        hold floor (operator has explicit control here).
         """
         with self._lock:
             self._set_nozzle(nozzle_id, on)
+            if on:
+                self._nozzle_opened_at[nozzle_id] = time.time()
+                self._nozzle_pending_close.pop(nozzle_id, None)
+            else:
+                self._nozzle_opened_at.pop(nozzle_id, None)
+                self._nozzle_pending_close.pop(nozzle_id, None)
 
     def manual_all_off(self):
         """Manually close all nozzles."""
@@ -458,15 +544,22 @@ if __name__ == '__main__':
         get_weed_config, get_cls_config,
         GrowthStage, DetectionMode
     )
-    from detection_engine_rgb import Detection, InferenceResult
+    from detection_engine_rgb import Detection, InferenceResult, DualInferenceResult
     from zone_manager_rgb import ZoneManagerRGB
 
-    def make_result(detections):
-        return InferenceResult(
-            detections=detections,
-            inference_ms=5.0, preprocess_ms=3.0, total_ms=8.0,
-            frame_shape=(640, 640), input_format='4ch',
-            model_path='test',
+    def make_dual(left_dets, right_dets, frame_id=0):
+        """Build a DualInferenceResult — matches zone_manager_rgb.py's
+        own self-test helper, since ZoneManagerRGB.update() requires
+        the dual-camera result, not a single InferenceResult."""
+        def make_result(dets, camera):
+            return InferenceResult(
+                detections=dets, inference_ms=5.0, preprocess_ms=3.0,
+                total_ms=8.0, frame_shape=(1080, 1920), camera=camera,
+            )
+        return DualInferenceResult(
+            left=make_result(left_dets, "left"),
+            right=make_result(right_dets, "right"),
+            frame_id=frame_id, timestamp=time.time(),
         )
 
     print("=" * 55)
@@ -492,14 +585,13 @@ if __name__ == '__main__':
     print(f"  Armed: {ctrl._armed} ✓")
     print(f"  Pump: {ctrl._pump_on} ✓")
 
-    # Simulate 4 frames with kochia in Zone A
+    # Simulate 4 frames with kochia in Zone A (left camera)
     det_a = Detection(class_id=1, class_name='kochia',
                       confidence=0.89,
                       x1=80, y1=200, x2=140, y2=280)
     new_events = []
     for i in range(4):
-        result = make_result([det_a])
-        decision = manager.update(result)
+        decision = manager.update(make_dual([det_a], []))
         evts = ctrl.actuate(decision)
         new_events.extend(evts)
 
@@ -515,21 +607,62 @@ if __name__ == '__main__':
     print(f"  Event mode: {ev.mode} ✓")
     print(f"  Spray duration: {ev.spray_duration}s ✓")
 
-    # Drain — 5 empty frames
+    # Drain — empty frames trip the debounce release, but the nozzle
+    # should stay open until the minimum hold floor elapses (real time).
     for _ in range(5):
-        decision = manager.update(make_result([]))
+        decision = manager.update(make_dual([], []))
         ctrl.actuate(decision)
+    assert ctrl._nozzle_state[0] == True, (
+        "Nozzle 1 should still be ON — floor hasn't elapsed yet"
+    )
+    print(f"  Nozzle 1 still ON right after drain (floor not yet elapsed) ✓")
 
-    assert ctrl._nozzle_state[0] == False, "Nozzle 1 should be OFF"
-    print(f"  Nozzle 1 OFF after drain: {not ctrl._nozzle_state[0]} ✓")
+    time.sleep(cfg.zones.weed_spray_duration + 0.05)
+    ctrl.actuate(manager.update(make_dual([], [])))  # resolve pending close
+    assert ctrl._nozzle_state[0] == False, "Nozzle 1 should be OFF after floor"
+    print(f"  Nozzle 1 OFF once floor elapsed: {not ctrl._nozzle_state[0]} ✓")
 
     ctrl.stop()
     print()
 
+    # ── Test 1b: Minimum hold floor — detection vanishes instantly ──
+    print("Test 1b: Detection vanishes right after trigger — floor enforced")
+    cfg_floor = get_weed_config(field_id='floor_test',
+                                growth_stage=GrowthStage.FOUR_LEAF)
+    manager_floor = ZoneManagerRGB(cfg_floor)
+    ctrl_floor = ActuationController(cfg_floor, gantry=None)
+    ctrl_floor.start()
+
+    # 4 frames to trigger (threshold), then detection disappears
+    for _ in range(4):
+        decision = manager_floor.update(make_dual([det_a], []))
+        ctrl_floor.actuate(decision)
+    assert ctrl_floor._nozzle_state[0] == True, "Nozzle should be ON after trigger"
+
+    # Immediately empty frame — debounce counter alone would close it
+    # on frame 1, but the floor should keep it open.
+    decision = manager_floor.update(make_dual([], []))
+    ctrl_floor.actuate(decision)
+    assert ctrl_floor._nozzle_state[0] == True, (
+        "Nozzle should STILL be on — floor not yet elapsed"
+    )
+    print(f"  Nozzle held open past debounce release ✓ "
+          f"(floor={ctrl_floor._min_hold}s)")
+
+    # Wait past the floor, then run one more actuate() to resolve it —
+    # actuate() re-checks pending closes independent of new decisions.
+    time.sleep(cfg_floor.zones.weed_spray_duration + 0.05)
+    ctrl_floor.actuate(manager_floor.update(make_dual([], [])))
+    assert ctrl_floor._nozzle_state[0] == False, (
+        "Nozzle should close once the floor has elapsed"
+    )
+    print(f"  Nozzle closed after floor elapsed ✓")
+    ctrl_floor.stop()
+    print()
+
     # ── Test 2: CLS mode — longer duration, flagged events ────
     print("Test 2: CLS mode — fungicide spray + flagged events")
-    cfg_cls = get_cls_config(field_id='cls_test',
-                             growth_stage=GrowthStage.VEGETATIVE)
+    cfg_cls = get_cls_config(field_id='cls_test')
 
     cls_events = []
     manager2 = ZoneManagerRGB(cfg_cls)
@@ -537,12 +670,13 @@ if __name__ == '__main__':
                                  on_spray_event=lambda e: cls_events.append(e))
     ctrl2.start()
 
+    # cx=350, cy=250 on the right camera → within ZoneB2 (0-900) → Nozzle 2
     det_cls = Detection(class_id=7, class_name='cls_infected',
                         confidence=0.91,
-                        x1=300, y1=200, x2=400, y2=300)  # cx=350 → Zone B
+                        x1=300, y1=200, x2=400, y2=300)
 
     for _ in range(4):
-        decision = manager2.update(make_result([det_cls]))
+        decision = manager2.update(make_dual([], [det_cls]))
         ctrl2.actuate(decision,
                       pose={'x': 4.23, 'y': 0.08},
                       gps={'lat': 46.291, 'lon': -96.612,
@@ -568,8 +702,11 @@ if __name__ == '__main__':
     print("Test 3: EStop — all nozzles off immediately")
 
     class MockROSBridge:
-        def __init__(self): self.estop = False
+        def __init__(self):
+            self.estop = False
+            self.connected = True  # simulate Husky already connected
         def is_estop_active(self): return self.estop
+        def is_connected(self): return self.connected
 
     mock_bridge = MockROSBridge()
     cfg3 = get_weed_config()
@@ -580,7 +717,7 @@ if __name__ == '__main__':
 
     # Trigger a nozzle
     for _ in range(4):
-        decision = manager3.update(make_result([det_a]))
+        decision = manager3.update(make_dual([det_a], []))
         ctrl3.actuate(decision)
 
     assert ctrl3._nozzle_state[0] == True
@@ -594,8 +731,48 @@ if __name__ == '__main__':
     assert ctrl3._estop_active == True
     print(f"  Nozzle 1 OFF after estop: {not ctrl3._nozzle_state[0]} ✓")
     print(f"  EStop active: {ctrl3._estop_active} ✓")
+    print(f"  (EStop bypasses the minimum hold floor by design — "
+          f"safety always wins)")
 
     ctrl3.stop()
+    print()
+
+    # ── Test 3b: EStop monitor survives a broken ros_bridge call ──
+    print("Test 3b: EStop monitor thread survives an exception mid-poll")
+
+    class FlakyROSBridge:
+        """Raises on is_connected() a few times, then works normally —
+        simulates a transient bug/glitch in the bridge implementation."""
+        def __init__(self):
+            self.estop = False
+            self._calls = 0
+        def is_connected(self):
+            self._calls += 1
+            if self._calls <= 3:
+                raise AttributeError("simulated transient failure")
+            return True
+        def is_estop_active(self):
+            return self.estop
+
+    flaky_bridge = FlakyROSBridge()
+    cfg3b = get_weed_config()
+    ctrl3b = ActuationController(cfg3b, gantry=None, ros_bridge=flaky_bridge)
+    ctrl3b.start()
+    time.sleep(0.8)  # let it survive several failing poll cycles
+    assert ctrl3b._estop_thread.is_alive(), (
+        "EStop monitor thread must survive exceptions, not die silently"
+    )
+    print(f"  Monitor thread still alive after {flaky_bridge._calls} "
+          f"poll attempts (3 raised exceptions) ✓")
+
+    # Once the bridge starts working, EStop enforcement should resume
+    flaky_bridge.estop = True
+    time.sleep(0.3)
+    assert ctrl3b._estop_active == True, (
+        "EStop should still be enforced once the bridge recovers"
+    )
+    print(f"  EStop enforcement resumed after bridge recovered ✓")
+    ctrl3b.stop()
     print()
 
     # ── Test 4: get_status ────────────────────────────────────
