@@ -26,11 +26,12 @@ warnings.filterwarnings("ignore", category=ResourceWarning)
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget,
     QVBoxLayout, QHBoxLayout, QTabWidget,
-    QLabel, QPushButton, QAction, QMessageBox
+    QLabel, QPushButton, QAction, QActionGroup, QMessageBox
 )
 from PyQt5.QtCore import Qt, QTimer
 
-from gui.style import STYLE, LED, BTN_ESTOP, _divider, _muted
+from gui.style import LED, BTN_ESTOP, _divider, _muted
+from gui.theme_manager import theme_manager
 from gui.shared_log import UnifiedLog
 from gui.keyboard_nav import KeyboardNav
 from gui.panels.dual_camera_panel import DualCameraPanel as CameraPanel
@@ -76,7 +77,14 @@ class MainWindow(QMainWindow):
             "ABEN Field Imaging System  v3.0")
         self.setMinimumSize(1400, 820)
         self.resize(1600, 900)
-        self.setStyleSheet(STYLE)
+        # No self.setStyleSheet(STYLE) here -- the app-wide QSS is
+        # applied once via theme_manager.apply(..., app=app) in the
+        # entry point below, BEFORE this window is constructed, so
+        # every widget (including this one) inherits it correctly.
+        # A widget-level setStyleSheet() call here would take CSS
+        # precedence over the app-level one and silently pin this
+        # window to whatever theme was active the first time this
+        # line ran, defeating theme switching.
         self._build_shared()
         self._build_ui()
         self._build_menu()
@@ -528,23 +536,38 @@ class MainWindow(QMainWindow):
 
     def _build_menu(self):
         mb = self.menuBar()
-        mb.setStyleSheet(
-            "QMenuBar{background-color:#0f1117;color:#e8eaf0;"
-            "font-family:Courier New;font-size:10px;}"
-            "QMenuBar::item:selected{background-color:#1a1e2e;}"
-            "QMenu{background-color:#1a1e2e;color:#e8eaf0;"
-            "border:1px solid #3a4055;}"
-            "QMenu::item:selected{background-color:#2e3448;}")
+        # No inline stylesheet here -- theme_manager's app-level QSS
+        # (_STYLE_TEMPLATE in theme_manager.py) already styles
+        # QMenuBar/QMenu for the active theme. A widget-level override
+        # here would have pinned the menu bar to one fixed set of hex
+        # colors regardless of the selected theme.
         fm = mb.addMenu("File")
         q = QAction("Quit", self)
         q.setShortcut("Ctrl+Q")
         q.triggered.connect(self.close)
         fm.addAction(q)
 
+        vm = mb.addMenu("View")
+        theme_menu = vm.addMenu("Theme")
+        theme_group = QActionGroup(self)
+        theme_group.setExclusive(True)
+        for key, label in theme_manager.list_themes():
+            action = QAction(label, self)
+            action.setCheckable(True)
+            action.setChecked(key == theme_manager.current)
+            action.triggered.connect(
+                lambda checked, k=key: self._on_theme_selected(k))
+            theme_group.addAction(action)
+            theme_menu.addAction(action)
+
         hm = mb.addMenu("Help")
         ab = QAction("About", self)
         ab.triggered.connect(self._about)
         hm.addAction(ab)
+
+    def _on_theme_selected(self, theme_key: str):
+        theme_manager.apply(theme_key, app=QApplication.instance())
+        self._sys_log.log("SYS", f"Theme changed: {theme_key}", "info")
 
     def _about(self):
         QMessageBox.information(self, "About",
@@ -552,7 +575,7 @@ class MainWindow(QMainWindow):
             "Modular 5-tab architecture:\n"
             "  Tab 1 — Data Collection\n"
             "  Tab 2 — Detection & Spray\n"
-            "  Tab 3 — Data Analysis\n"
+            "  Tab 3 — Session Analysis\n"
             "  Tab 4 — Future\n"
             "  Tab 5 — Future\n\n"
             "Camera: eMeet C960 4K (Dual RGB)\n"
@@ -635,6 +658,14 @@ class MainWindow(QMainWindow):
 if __name__ == "__main__":
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
+    # Load the operator's saved theme choice (falls back to the
+    # aben_dark default if none was ever saved) and apply the
+    # app-level QSS BEFORE any window/widget is constructed, so every
+    # panel's theme_manager.register_widget()/register_button() calls
+    # during construction pick up the correct starting theme rather
+    # than always defaulting to aben_dark regardless of what was saved.
+    theme_manager.load()
+    theme_manager.apply(theme_manager.current, app=app, save=False)
     win = MainWindow()
     win.show()
     sys.exit(app.exec_())
