@@ -28,6 +28,7 @@ Path   : /media/pagsun/Transcend/phd_project/emeet_dual_cam/
 """
 
 import time
+import logging
 import math as _math
 import datetime
 from pathlib import Path
@@ -657,8 +658,28 @@ class DetectionPanelRGB(QWidget):
         if self._actuation:
             try:
                 self._actuation.emergency_stop()
-            except Exception:
-                pass
+                self.shared_log.log(
+                    "DETECT", "ActuationController E-STOP acknowledged", "error")
+            except Exception as e:
+                # This used to be a bare `except: pass` -- it silently
+                # swallowed the fact that emergency_stop() didn't exist
+                # on ActuationController at all, meaning this call site
+                # never actually stopped anything for who knows how
+                # long. Never swallow an E-STOP failure silently again.
+                self.shared_log.log(
+                    "DETECT",
+                    f"⚠⚠ ActuationController.emergency_stop() FAILED: {e} "
+                    f"-- relying on direct gantry E-STOP only",
+                    "error")
+                logging.error(
+                    f"ActuationController.emergency_stop() failed during "
+                    f"E-STOP: {e}", exc_info=True)
+        else:
+            self.shared_log.log(
+                "DETECT",
+                "⚠ E-STOP pressed but no ActuationController is active "
+                "(not armed) -- nothing to stop on this path",
+                "warn")
         self.shared_log.log("DETECT", "E-STOP", "error")
 
     def _load_model(self):

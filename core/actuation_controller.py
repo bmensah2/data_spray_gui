@@ -157,6 +157,7 @@ class ActuationController:
 
         # EStop tracking
         self._estop_active = False
+        self._manual_estop_active = False
         self._estop_thread = None
         self._running      = False
 
@@ -248,6 +249,45 @@ class ActuationController:
             f"total events: {self._total_events}"
         )
 
+    def emergency_stop(self):
+        """
+        Operator-triggered emergency stop (e.g. a GUI E-STOP button).
+
+        Distinct from the automatic ros_bridge-driven EStop handled by
+        _estop_monitor(): that one is tracked in self._estop_active and
+        cleared automatically the moment ros_bridge reports the Husky's
+        own /estop is inactive again. A manual/GUI E-STOP must NOT be
+        auto-cleared that way — if it reused self._estop_active, the
+        watchdog thread would silently clear a manual E-STOP within
+        ~100ms whenever ros_bridge happens to report no active estop,
+        defeating the point of a manual stop entirely. So this uses a
+        separate flag (self._manual_estop_active) that only this method
+        and clear_emergency_stop() ever touch.
+
+        Immediately kills all nozzles + pump and halts actuate() from
+        doing anything further until clear_emergency_stop() is called
+        (or, in this app, until the operator re-arms, which builds a
+        fresh ActuationController anyway).
+        """
+        with self._lock:
+            self._manual_estop_active = True
+            self._all_nozzles_off()
+            if not self._dry_run and self.gantry:
+                self.gantry.send_command("pump off")
+            self._pump_on = False
+        logging.warning(
+            "⚠ MANUAL E-STOP — all nozzles + pump OFF, "
+            "actuate() will refuse to fire until cleared"
+        )
+
+    def clear_emergency_stop(self):
+        """Explicitly clear a manual emergency_stop(). Does NOT re-arm
+        by itself -- actuate() will resume normal behavior on the next
+        call as long as self._armed is still True."""
+        with self._lock:
+            self._manual_estop_active = False
+        logging.info("✓ Manual E-STOP cleared")
+
     def __enter__(self):
         self.start()
         return self
@@ -277,8 +317,11 @@ class ActuationController:
             logging.warning("actuate() called before start() — ignoring")
             return []
 
-        # EStop check — highest priority
-        if self._estop_active:
+        # EStop check — highest priority. Covers both the automatic
+        # ros_bridge-driven EStop (self._estop_active) and a manual/GUI
+        # E-STOP (self._manual_estop_active) -- either one blocks
+        # actuate() from doing anything until cleared.
+        if self._estop_active or self._manual_estop_active:
             self._emergency_all_off()
             return []
 
@@ -574,6 +617,7 @@ class ActuationController:
             'mode':           self._mode.value,
             'pump_on':        self._pump_on,
             'estop_active':   self._estop_active,
+            'manual_estop_active': self._manual_estop_active,
             'nozzle_states':  dict(self._nozzle_state),
             'total_sprays':   self._total_sprays,
             'total_events':   self._total_events,
@@ -875,6 +919,68 @@ if __name__ == '__main__':
 
     logging.getLogger().removeHandler(handler)
     ctrl5.stop()
+    print()
+
+    # ── Test 6: manual emergency_stop() actually exists and works ──
+    print("Test 6: Manual emergency_stop() — the bug that motivated this test")
+    cfg6 = get_weed_config()
+    manager6 = ZoneManagerRGB(cfg6)
+    ctrl6 = ActuationController(cfg6, gantry=None)
+    ctrl6.start()
+
+    # Trigger a spray so there's something real to stop
+    for _ in range(4):
+        ctrl6.actuate(manager6.update(make_dual([det_a], [])))
+    assert ctrl6._nozzle_state[0] == True, "Nozzle should be on before E-STOP"
+
+    # This is exactly what detection_panel_rgb.py's _det_estop() calls.
+    # Before this fix, ActuationController had no emergency_stop() method
+    # at all, so this line raised AttributeError -- silently swallowed
+    # by a bare `except: pass` at the call site, meaning the GUI's
+    # E-STOP button never actually reached ActuationController.
+    ctrl6.emergency_stop()
+
+    assert ctrl6._nozzle_state[0] == False, "Nozzle must be off after emergency_stop()"
+    assert ctrl6._pump_on == False
+    assert ctrl6._manual_estop_active == True
+    print(f"  emergency_stop() exists and actually turns things off ✓")
+
+    # ── Test 6b: manual E-STOP is NOT auto-cleared by the ros_bridge watchdog ──
+    print("Test 6b: Manual E-STOP survives a healthy ros_bridge poll cycle")
+
+    class HealthyROSBridge:
+        """Reports fully healthy/connected/no-estop -- if the watchdog
+        thread incorrectly used self._estop_active for manual E-STOPs
+        too, this would clear the manual stop within ~100ms."""
+        def is_connected(self): return True
+        def is_estop_active(self): return False
+
+    cfg6b = get_weed_config()
+    ctrl6b = ActuationController(cfg6b, gantry=None, ros_bridge=HealthyROSBridge())
+    ctrl6b.start()
+    time.sleep(0.15)  # let the watchdog thread poll at least once
+    ctrl6b.emergency_stop()
+    time.sleep(0.4)   # several more healthy poll cycles
+
+    assert ctrl6b._manual_estop_active == True, (
+        "Manual E-STOP must NOT be cleared by a healthy ros_bridge -- "
+        "only clear_emergency_stop() should ever clear it"
+    )
+    # And actuate() must still refuse to fire while it's active
+    decision = manager6.update(make_dual([det_a], []))
+    for _ in range(4):
+        evts = ctrl6b.actuate(decision)
+    assert ctrl6b._nozzle_state[0] == False, (
+        "actuate() must refuse to fire nozzles during a manual E-STOP"
+    )
+    print(f"  Manual E-STOP survived healthy ros_bridge polling ✓")
+    print(f"  actuate() correctly refuses to fire while manually E-STOPped ✓")
+
+    ctrl6b.clear_emergency_stop()
+    assert ctrl6b._manual_estop_active == False
+    print(f"  clear_emergency_stop() works ✓")
+    ctrl6.stop()
+    ctrl6b.stop()
     print()
 
     print("=" * 55)
