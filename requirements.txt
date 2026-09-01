@@ -1,0 +1,21 @@
+# ABEN Field Spray & Imaging System — Jetson-side requirements
+# Install with: pip install -r requirements.txt
+#
+# These are the packages actually imported by main_gui_rgb.py,
+# core/*, gui/*, and tools/* as of this audit. Versions are not
+# yet pinned to exact numbers used in the field — pin these next
+# time you have a known-working Jetson image (`pip freeze`).
+
+PyQt5
+opencv-python
+numpy
+pyserial
+tifffile
+PyYAML
+ultralytics        # YOLO inference/training — core/detection_engine_rgb.py runs
+                    # in stub mode without it, so it's optional but recommended
+
+# --- Husky-side only (navigation/*.py) ---
+# rospy, tf, geometry_msgs, nav_msgs come from a ROS distro install,
+# not pip. These scripts run on the Husky onboard PC inside its ROS
+# environment, not on the Jetson — see navigation/README.md.

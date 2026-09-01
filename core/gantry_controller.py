@@ -52,6 +52,14 @@ class GantryController:
     POLL_INTERVAL = 1.5       # seconds between status polls
     CONNECT_TIMEOUT = 8.0     # seconds to wait for Arduino boot
 
+    # If we haven't heard anything from the Arduino in this long,
+    # treat the link as dead even if the OS-level port handle is
+    # still open (e.g. Arduino hung, cable half-seated). This is
+    # independent of — and in addition to — the firmware's own
+    # COMM_TIMEOUT_MS watchdog, which protects the hardware even
+    # if this process never notices the link is down.
+    LINK_TIMEOUT = 5.0
+
     def __init__(self):
         self.state          = GantryState()
         self._serial        = None
@@ -61,6 +69,7 @@ class GantryController:
         self._lock          = threading.Lock()
         self._log_cb: Optional[Callable] = None   # GUI log callback
         self._state_cb: Optional[Callable] = None  # GUI state-update callback
+        self._last_rx_time: float = 0.0            # last time we heard from Arduino
 
     # ── Callbacks ────────────────────────────────────────────
     def set_log_callback(self, cb: Callable):
@@ -103,6 +112,7 @@ class GantryController:
 
             self._running = True
             self.state.connected = True
+            self._last_rx_time = time.time()
             self._worker = threading.Thread(
                 target=self._worker_loop, daemon=True
             )
@@ -181,14 +191,25 @@ class GantryController:
                         raw = self._serial.readline()
                         line = raw.decode("utf-8", errors="replace").strip()
                         if line:
+                            self._last_rx_time = time.time()
                             self._parse_line(line)
                             self._log(line, "recv")
                     except Exception as e:
                         self._log(f"Read error: {e}", "error")
-                        self.disconnect()
+                        self._handle_link_loss("read error")
                         break
             except OSError:
-                # Serial port closed — exit cleanly
+                # Serial port closed/yanked at the OS level.
+                self._handle_link_loss("port closed")
+                break
+
+            # Link-loss watchdog: port handle is still open but the
+            # Arduino has gone quiet (hung, cable half-seated, etc).
+            # Don't rely on an exception — check elapsed time directly.
+            if time.time() - self._last_rx_time > self.LINK_TIMEOUT:
+                self._handle_link_loss(
+                    f"no data for >{self.LINK_TIMEOUT:.0f}s"
+                )
                 break
 
             # Periodic status poll
@@ -197,6 +218,28 @@ class GantryController:
                 last_poll = time.time()
 
             time.sleep(0.02)
+
+    def _handle_link_loss(self, reason: str):
+        """
+        Mark the connection as dead and notify listeners.
+
+        Note: this only stops us from reporting a stale "connected"
+        state and lets the GUI/actuation layer react. The firmware's
+        own COMM_TIMEOUT_MS watchdog is what actually forces the
+        pump/nozzles off at the hardware level — it does not depend
+        on this method ever running.
+        """
+        self._log(f"⚠ Gantry link lost ({reason}) — hardware state unknown "
+                   f"until reconnected. Firmware watchdog will force "
+                   f"pump/nozzles OFF independently.", "error")
+        self._running = False
+        self.state.connected = False
+        if self._serial and self._serial.is_open:
+            try:
+                self._serial.close()
+            except Exception:
+                pass
+        self._notify_state()
 
     def _write(self, cmd: str):
         if self._serial and self._serial.is_open:
@@ -208,6 +251,12 @@ class GantryController:
     # ── Response parser ───────────────────────────────────────
     def _parse_line(self, line: str):
         changed = False
+
+        # Firmware comms watchdog tripped — Arduino stopped hearing from
+        # us and force-closed nozzles/pump on its own. Surface loudly;
+        # the [PMP]/[NZ] OFF lines that follow will update state as usual.
+        if "[WDT]" in line:
+            self._log(f"⚠ FIRMWARE WATCHDOG: {line}", "error")
 
         # Homed confirmation
         if "[OK] Home set" in line:

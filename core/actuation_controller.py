@@ -458,7 +458,7 @@ if __name__ == '__main__':
         get_weed_config, get_cls_config,
         GrowthStage, DetectionMode
     )
-    from .detection_engine_rgb import Detection, InferenceResult
+    from detection_engine_rgb import Detection, InferenceResult
     from zone_manager_rgb import ZoneManagerRGB
 
     def make_result(detections):

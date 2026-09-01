@@ -1,0 +1,34 @@
+# Node (generate_report_rgb.js dependency — do not commit)
+node_modules/
+npm-debug.log*
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+
+# Model weights / large artifacts — track via release assets or DVC, not git
+*.pt
+*.onnx
+*.engine
+*.weights
+weights/
+runs/
+
+# Captured data / logs (large, field-generated — not source)
+data/
+captures/
+logs/
+*.log
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+
+# Local calibration/session artifacts
+*.session

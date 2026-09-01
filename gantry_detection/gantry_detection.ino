@@ -71,6 +71,23 @@ bool pumpState                 = false;
 bool lightState                = false;
 
 // ──────────────────────────────────────────────────────────
+//  COMMS WATCHDOG
+//
+//  The Jetson polls "p" every 1.5s (see gantry_controller.py
+//  POLL_INTERVAL) even when idle, so ANY complete command
+//  (not just nozzle/pump commands) counts as a live heartbeat.
+//
+//  If no command is received for COMM_TIMEOUT_MS, we assume the
+//  Jetson has crashed, hung, or the USB/serial link has died and
+//  force pump + all nozzles OFF regardless of last commanded
+//  state. This is the last line of defense — it does NOT depend
+//  on any software on the host being alive.
+// ──────────────────────────────────────────────────────────
+const unsigned long COMM_TIMEOUT_MS = 4000;   // ~2.6x the 1.5s poll interval
+unsigned long        lastCmdMillis  = 0;
+bool                  watchdogTripped = false;
+
+// ──────────────────────────────────────────────────────────
 //  SERIAL BUFFER (no String — zero heap allocation)
 // ──────────────────────────────────────────────────────────
 const uint8_t CMD_BUF_SIZE = 64;
@@ -89,6 +106,7 @@ void setPump(bool on);
 void setLight(bool on);
 void setServoAngle(int angle);
 bool validateServoRange(int angle);
+void checkCommsWatchdog();
 void printFullStatus();
 void printBanner();
 void printMenu();
@@ -127,6 +145,7 @@ void setup() {
   digitalWrite(LIGHT_PIN, HIGH);
 
   Serial.begin(9600);
+  lastCmdMillis = millis();
   printBanner();
   printMenu();
 }
@@ -151,9 +170,32 @@ void loop() {
   }
 
   if (cmdReady) {
+    // Any complete line — including routine "p" status polls —
+    // counts as proof the Jetson is alive and talking to us.
+    lastCmdMillis   = millis();
+    watchdogTripped = false;
+
     processCommand(cmdBuf);
     cmdLen   = 0;
     cmdReady = false;
+  }
+
+  checkCommsWatchdog();
+}
+
+// ──────────────────────────────────────────────────────────
+//  COMMS WATCHDOG CHECK
+//  Call every loop() pass. Uses subtraction so it is safe
+//  across the ~49-day millis() rollover.
+// ──────────────────────────────────────────────────────────
+void checkCommsWatchdog() {
+  unsigned long elapsed = millis() - lastCmdMillis;
+
+  if (elapsed > COMM_TIMEOUT_MS && !watchdogTripped) {
+    watchdogTripped = true;
+    Serial.println(F("[WDT] Comm link lost — forcing pump + nozzles OFF"));
+    allNozzlesOff();
+    setPump(false);
   }
 }
 
@@ -311,6 +353,11 @@ void printFullStatus() {
   Serial.println(F("    Stepper  : ENABLED [HOLDING TORQUE]"));
   Serial.println(F("    Motor PSU: ON  [POWERED]"));
   Serial.println(F("    Homing   : N/A (detection mode)"));
+  Serial.print(F("    Comm WDT : "));
+  Serial.print(millis() - lastCmdMillis);
+  Serial.print(F("ms since last cmd (timeout "));
+  Serial.print(COMM_TIMEOUT_MS);
+  Serial.println(F("ms)"));
   Serial.println(F("    ==========================="));
 }
 
