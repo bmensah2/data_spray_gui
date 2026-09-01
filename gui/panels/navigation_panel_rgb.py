@@ -124,6 +124,10 @@ class NavigationPanelRGB(QWidget):
         self._last_session_json: str = None
 
         MISSIONS_LOCAL.mkdir(parents=True, exist_ok=True)
+        self._manual_grp_widget        = None
+        self._quick_grp_widget         = None
+        self._mission_grp_widget       = None
+        self._spray_mission_grp_widget = None
         self._build_ui()
 
         # Odom refresh timer — 500ms
@@ -150,17 +154,56 @@ class NavigationPanelRGB(QWidget):
 
         lay.addWidget(self._connection_grp())
         lay.addWidget(_divider())
-        lay.addWidget(self._manual_grp())
-        lay.addWidget(self._quick_grp())
+        self._manual_grp_widget = self._manual_grp()
+        lay.addWidget(self._manual_grp_widget)
+        self._quick_grp_widget = self._quick_grp()
+        lay.addWidget(self._quick_grp_widget)
         lay.addWidget(_divider())
-        lay.addWidget(self._mission_grp())
+        self._mission_grp_widget = self._mission_grp()
+        lay.addWidget(self._mission_grp_widget)
         lay.addWidget(self._stop_grp())
         lay.addWidget(_divider())
-        lay.addWidget(self._spray_mission_grp())
+        self._spray_mission_grp_widget = self._spray_mission_grp()
+        lay.addWidget(self._spray_mission_grp_widget)
         lay.addStretch()
 
         scroll.setWidget(inner)
         outer.addWidget(scroll)
+
+    # ── Cross-tab movement lock ─────────────────────────────────
+    # Data Collection and Detection each get their own NavigationPanelRGB
+    # instance (Qt widgets can't share a parent), but both talk to the
+    # SAME physical Husky over independent SSH subprocesses -- with no
+    # coordination between them, both tabs could issue conflicting
+    # motion commands at once. Design: only one tab's controls are ever
+    # enabled at a time. Data Collection starts enabled; Detection starts
+    # locked until explicitly armed (see tab_detection.py _on_arm /
+    # _on_stop / _on_estop, wired to this in main_gui_rgb.py).
+    def set_movement_controls_enabled(self, enabled: bool):
+        """
+        Enable/disable everything that can command robot motion —
+        manual moves, quick moves, mission start, spray mission start.
+        The STOP button is intentionally NOT part of this group and
+        always stays enabled/clickable.
+
+        When disabling, also actively stops any motion this panel may
+        have already started — locking the controls only prevents NEW
+        commands, it doesn't interrupt one already in flight, so we
+        stop explicitly to guarantee a clean handoff to the other tab.
+        """
+        for grp in (self._manual_grp_widget, self._quick_grp_widget,
+                    self._mission_grp_widget, self._spray_mission_grp_widget):
+            if grp is not None:
+                grp.setEnabled(enabled)
+
+        if not enabled:
+            self._nav_stop()  # kill anything this panel may have started
+            self.shared_log.log(
+                "NAV", "Movement controls LOCKED — other tab is active",
+                "warn")
+        else:
+            self.shared_log.log(
+                "NAV", "Movement controls unlocked", "info")
 
     # ── Connection status ─────────────────────────────────────
 

@@ -14,7 +14,7 @@ from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout,
     QSplitter, QTabWidget, QLabel, QPushButton
 )
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import Qt, pyqtSignal
 
 from gui.style import _divider, _sec, _muted, LED
 from gui.theme_manager import theme_manager
@@ -37,6 +37,12 @@ class DetectionTab(QWidget):
       nav     : NavigationPanel
       gantry  : GantryPanel  (shared — same controller as Tab 1)
     """
+
+    # Emitted whenever detection is armed/disarmed/estopped, so
+    # MainWindow can lock/unlock Data Collection's navigation
+    # controls — only one tab should ever be able to command Husky
+    # motion at a time (see NavigationPanelRGB.set_movement_controls_enabled).
+    armed_changed = pyqtSignal(bool)
 
     def __init__(self, camera: DualCameraPanel,
                  nav: NavigationPanelRGB,
@@ -315,6 +321,8 @@ class DetectionTab(QWidget):
                 self.arm_status, lambda p: (
                     f"color:{p['amber']};font-size:10px;"
                     f"font-family:Courier New;"))
+            self.nav.set_movement_controls_enabled(True)
+            self.armed_changed.emit(True)
 
     def _on_stop(self):
         self.detect._det_stop()
@@ -328,10 +336,14 @@ class DetectionTab(QWidget):
             self.arm_status, lambda p: (
                 f"color:{p['muted']};font-size:10px;"
                 f"font-family:Courier New;"))
+        self.nav.set_movement_controls_enabled(False)
+        self.armed_changed.emit(False)
 
     def _on_estop(self):
         self.detect._det_estop()
         self.spray.emergency_stop()
+        self.nav.set_movement_controls_enabled(False)
+        self.armed_changed.emit(False)
         self.log.log("SYS", "E-STOP activated", "error")
 
     def cleanup(self):

@@ -146,6 +146,19 @@ class MainWindow(QMainWindow):
             acq=self.acq)
         self.tab3 = AnalysisTab(self.camera)
 
+        # ── Cross-tab movement lock ─────────────────────────────
+        # Data Collection and Detection each drive the Husky through
+        # their own independent SSH subprocess with no coordination
+        # between them (see NavigationPanelRGB.set_movement_controls_enabled
+        # for the full explanation). Enforce mutual exclusion here:
+        # Data Collection starts as the only active tab; Detection's
+        # movement controls stay locked until the operator explicitly
+        # arms detection, at which point Collection's controls lock
+        # instead. Disarming/E-Stopping hands control back to Collection.
+        self.nav_detection.set_movement_controls_enabled(False)
+        self.nav_collection.set_movement_controls_enabled(True)
+        self.tab2.armed_changed.connect(self._on_detection_armed_changed)
+
         self.main_tabs.addTab(
             self.tab1, "📷  Data Collection")
         self.main_tabs.addTab(
@@ -163,6 +176,16 @@ class MainWindow(QMainWindow):
         self._hdr_timer = QTimer()
         self._hdr_timer.timeout.connect(self._refresh_header)
         self._hdr_timer.start(500)
+
+    def _on_detection_armed_changed(self, armed: bool):
+        """Detection armed → lock Collection's movement controls.
+        Detection disarmed/estopped → hand control back to Collection."""
+        self.nav_collection.set_movement_controls_enabled(not armed)
+        self._sys_log.log(
+            "SYS",
+            "Detection ARMED — Data Collection movement locked" if armed
+            else "Detection DISARMED — Data Collection movement unlocked",
+            "warn" if armed else "info")
 
     def _header(self) -> QWidget:
         """
