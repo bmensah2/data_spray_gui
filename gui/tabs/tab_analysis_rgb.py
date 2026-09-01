@@ -18,6 +18,13 @@ Data sources (all already exist elsewhere in the app):
   - DetectionPanelRGB.get_actuation_status() / get_husky_status()
   - GantryPanel.ctrl.state                — GantryState (pump/nozzles/etc)
 
+Every color in this file comes from gui.theme_manager's active palette
+via register_widget()/register_button() -- nothing is hardcoded, so
+switching themes (View > Theme) re-colors this tab like every other
+themed panel. See gui/theme_manager.py's docstring for the palette
+key reference and gui/panels/gantry_panel.py for the established
+register_widget(widget, lambda p: f"...") pattern this file follows.
+
 Author : Nana | NDSU / PhD Imaging System
 Path   : /media/pagsun/Transcend/phd_project/emeet_dual_cam/
 """
@@ -34,9 +41,10 @@ from PyQt5.QtWidgets import (
     QTableWidgetItem, QHeaderView, QAbstractItemView
 )
 from PyQt5.QtCore import Qt, QTimer
-from PyQt5.QtGui import QImage, QPixmap
+from PyQt5.QtGui import QImage, QPixmap, QColor
 
-from gui.style import _divider, _muted, _sec, BTN_BLUE
+from gui.style import _divider, _muted, _sec
+from gui.theme_manager import theme_manager
 from gui.shared_log import UnifiedLog, LogPanel
 
 
@@ -51,6 +59,13 @@ MAX_FEED_ROWS = 300
 # session shows up on the map. Only the trail (a nice-to-have visual
 # aid, not research data) is bounded.
 MAX_TRAIL_POINTS = 2000
+
+
+def _hex_to_bgr(h):
+    """Palette hex string -> OpenCV BGR tuple, for canvas drawing."""
+    h = h.lstrip("#")
+    r, g, b = int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
+    return (b, g, r)
 
 
 class AnalysisTabRGB(QWidget):
@@ -91,6 +106,10 @@ class AnalysisTabRGB(QWidget):
         self._status_timer.timeout.connect(self._refresh_status)
         self._status_timer.start(500)
 
+        # Redraw the map on theme changes too, since it's drawn with
+        # palette colors baked into pixels (OpenCV canvas), not CSS.
+        theme_manager.on_change(self._redraw_map)
+
         self.log.log("SYS", "Analysis tab ready — live session dashboard", "ok")
 
     # ── UI construction ───────────────────────────────────────
@@ -111,7 +130,7 @@ class AnalysisTabRGB(QWidget):
         self.lbl_duration = _muted("--:--")
         hdr.addWidget(self.lbl_duration)
         self.btn_clear = QPushButton("Clear Feed")
-        self.btn_clear.setStyleSheet(BTN_BLUE)
+        theme_manager.register_button(self.btn_clear, "blue")
         self.btn_clear.setFixedHeight(24)
         self.btn_clear.clicked.connect(self._on_clear)
         hdr.addWidget(self.btn_clear)
@@ -157,13 +176,17 @@ class AnalysisTabRGB(QWidget):
         self.tbl_events.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.tbl_events.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.tbl_events.setAlternatingRowColors(True)
-        self.tbl_events.setStyleSheet(
-            "QTableWidget{background-color:#0a0d14;color:#c0c4d0;"
-            "font-family:Courier New;font-size:10px;"
-            "gridline-color:#2a2f3d;border:1px solid #2a2f3d;}"
-            "QHeaderView::section{background-color:#151a26;color:#8090c0;"
-            "padding:4px;border:1px solid #2a2f3d;font-weight:bold;}"
-            "QTableWidget::item:alternate{background-color:#0d1119;}")
+        theme_manager.register_widget(
+            self.tbl_events, lambda p: (
+                f"QTableWidget{{background-color:{p['bg0']};color:{p['text_dim']};"
+                f"font-family:'Courier New';font-size:10px;"
+                f"gridline-color:{p['border2']};border:1px solid {p['border2']};}}"
+                f"QHeaderView::section{{background-color:{p['bg3']};"
+                f"color:{p['muted']};padding:4px;border:1px solid {p['border2']};"
+                f"font-weight:bold;}}"
+                f"QTableWidget::item:alternate{{background-color:{p['bg2']};}}"
+                f"QTableWidget::item:selected{{background-color:{p['btn_bg']};}}"
+            ))
         lay.addWidget(self.tbl_events)
         return grp
 
@@ -176,8 +199,10 @@ class AnalysisTabRGB(QWidget):
         def _row(label, attr, row):
             gl.addWidget(_muted(label), row, 0)
             lbl = QLabel("—")
-            lbl.setStyleSheet(
-                "color:#60c0a0;font-size:10px;font-family:Courier New;")
+            theme_manager.register_widget(
+                lbl, lambda p: (
+                    f"color:{p['green']};font-size:10px;"
+                    f"font-family:'Courier New';"))
             gl.addWidget(lbl, row, 1)
             setattr(self, attr, lbl)
 
@@ -198,15 +223,19 @@ class AnalysisTabRGB(QWidget):
         gl.addWidget(_muted("By zone:"), 0, 0)
         self.lbl_by_zone = QLabel("—")
         self.lbl_by_zone.setWordWrap(True)
-        self.lbl_by_zone.setStyleSheet(
-            "color:#c0c4d0;font-size:10px;font-family:Courier New;")
+        theme_manager.register_widget(
+            self.lbl_by_zone, lambda p: (
+                f"color:{p['text_dim']};font-size:10px;"
+                f"font-family:'Courier New';"))
         gl.addWidget(self.lbl_by_zone, 0, 1)
 
         gl.addWidget(_muted("By class:"), 1, 0)
         self.lbl_by_class = QLabel("—")
         self.lbl_by_class.setWordWrap(True)
-        self.lbl_by_class.setStyleSheet(
-            "color:#c0c4d0;font-size:10px;font-family:Courier New;")
+        theme_manager.register_widget(
+            self.lbl_by_class, lambda p: (
+                f"color:{p['text_dim']};font-size:10px;"
+                f"font-family:'Courier New';"))
         gl.addWidget(self.lbl_by_class, 1, 1)
         return grp
 
@@ -219,8 +248,10 @@ class AnalysisTabRGB(QWidget):
         def _row(label, attr, row):
             gl.addWidget(_muted(label), row, 0)
             lbl = QLabel("—")
-            lbl.setStyleSheet(
-                "color:#c0c4d0;font-size:10px;font-family:Courier New;")
+            theme_manager.register_widget(
+                lbl, lambda p: (
+                    f"color:{p['text_dim']};font-size:10px;"
+                    f"font-family:'Courier New';"))
             gl.addWidget(lbl, row, 1)
             setattr(self, attr, lbl)
 
@@ -240,13 +271,23 @@ class AnalysisTabRGB(QWidget):
         self.lbl_map = QLabel()
         self.lbl_map.setAlignment(Qt.AlignCenter)
         self.lbl_map.setMinimumSize(300, 220)
-        self.lbl_map.setStyleSheet(
-            "border:1px solid #2a2f3d;background-color:#050810;"
-            "border-radius:3px;")
+        theme_manager.register_widget(
+            self.lbl_map, lambda p: (
+                f"border:1px solid {p['border2']};background-color:{p['bg0']};"
+                f"border-radius:3px;"))
         self.lbl_map.setScaledContents(True)
         lay.addWidget(self.lbl_map)
         self._redraw_map()  # draw an empty map immediately
         return grp
+
+    # ── Small palette-aware helper for dynamic (state-dependent)
+    #    label styling — the pattern gantry_panel.py uses for its
+    #    on/off button roles, adapted for plain QLabel text color. ──
+
+    def _style_label(self, lbl, palette_key, extra=""):
+        theme_manager.register_widget(
+            lbl, lambda p, k=palette_key, x=extra: (
+                f"color:{p[k]};font-size:10px;font-family:'Courier New';{x}"))
 
     # ── Session lifecycle ─────────────────────────────────────
 
@@ -310,11 +351,12 @@ class AnalysisTabRGB(QWidget):
             ts, event.zone_name, f"N{event.nozzle_id + 1}",
             ", ".join(names) or "—", f"{conf:.2f}", pose_str, gps_str,
         ]
+        flag_color = QColor(theme_manager.palette()['amber'])
         for col, text in enumerate(row):
             item = QTableWidgetItem(text)
             item.setTextAlignment(Qt.AlignCenter)
             if event.flagged_cls:
-                item.setForeground(Qt.yellow)
+                item.setForeground(flag_color)
             self.tbl_events.setItem(0, col, item)
 
         # Cap displayed rows — full data stays in self._events regardless
@@ -385,45 +427,47 @@ class AnalysisTabRGB(QWidget):
         gstate = gctrl.state if gctrl is not None else None
         if gstate is not None and gstate.connected:
             self.stat_arduino.setText("Connected")
-            self.stat_arduino.setStyleSheet(
-                "color:#00c896;font-size:10px;font-family:Courier New;")
+            self._style_label(self.stat_arduino, 'green')
             self.stat_pump.setText("ON" if gstate.pump_on else "off")
-            self.stat_pump.setStyleSheet(
-                f"color:{'#00c896' if gstate.pump_on else '#8090c0'};"
-                f"font-size:10px;font-family:Courier New;")
+            self._style_label(self.stat_pump,
+                               'green' if gstate.pump_on else 'muted')
             noz = gstate.nozzles or [False, False, False]
             self.stat_nozzles.setText(
                 "  ".join(f"N{i+1}:{'ON' if v else 'off'}"
                           for i, v in enumerate(noz)))
+            self._style_label(self.stat_nozzles, 'text_dim')
         else:
             self.stat_arduino.setText("Not connected")
-            self.stat_arduino.setStyleSheet(
-                "color:#f5a623;font-size:10px;font-family:Courier New;")
+            self._style_label(self.stat_arduino, 'amber')
             self.stat_pump.setText("—")
             self.stat_nozzles.setText("—")
+            self._style_label(self.stat_pump, 'muted')
+            self._style_label(self.stat_nozzles, 'muted')
 
         # ActuationController (only present while armed)
         act = self.detect.get_actuation_status()
         if act is not None:
             self.stat_armed.setText("ARMED" if act['armed'] else "disarmed")
-            self.stat_armed.setStyleSheet(
-                f"color:{'#f5a623' if act['armed'] else '#8090c0'};"
-                f"font-size:10px;font-family:Courier New;font-weight:bold;")
+            self._style_label(self.stat_armed,
+                               'amber' if act['armed'] else 'muted',
+                               extra="font-weight:bold;")
             self.stat_mode.setText(
                 f"{act['mode'].upper()}"
                 f"{'  [DRY RUN]' if act['dry_run'] else ''}")
+            self._style_label(self.stat_mode, 'text_dim')
 
             estop = act.get('estop_active') or act.get('manual_estop_active')
             self.stat_estop.setText("ACTIVE" if estop else "clear")
-            self.stat_estop.setStyleSheet(
-                f"color:{'#ff4040' if estop else '#00c896'};"
-                f"font-size:10px;font-family:Courier New;font-weight:bold;")
+            self._style_label(self.stat_estop,
+                               'red' if estop else 'green',
+                               extra="font-weight:bold;")
         else:
             self.stat_armed.setText("disarmed")
-            self.stat_armed.setStyleSheet(
-                "color:#8090c0;font-size:10px;font-family:Courier New;")
+            self._style_label(self.stat_armed, 'muted')
             self.stat_mode.setText("—")
             self.stat_estop.setText("—")
+            self._style_label(self.stat_mode, 'muted')
+            self._style_label(self.stat_estop, 'muted')
 
         # Husky / ROSBridge (only present while armed)
         husky = self.detect.get_husky_status()
@@ -431,16 +475,13 @@ class AnalysisTabRGB(QWidget):
             if husky['connected']:
                 self.stat_husky.setText(
                     f"Connected (hb {husky['heartbeat_age_s']:.1f}s ago)")
-                self.stat_husky.setStyleSheet(
-                    "color:#00c896;font-size:10px;font-family:Courier New;")
+                self._style_label(self.stat_husky, 'green')
             else:
                 self.stat_husky.setText("No connection")
-                self.stat_husky.setStyleSheet(
-                    "color:#f5a623;font-size:10px;font-family:Courier New;")
+                self._style_label(self.stat_husky, 'amber')
         else:
             self.stat_husky.setText("—")
-            self.stat_husky.setStyleSheet(
-                "color:#8090c0;font-size:10px;font-family:Courier New;")
+            self._style_label(self.stat_husky, 'muted')
 
     # ── Spray location map ─────────────────────────────────────
 
@@ -450,34 +491,46 @@ class AnalysisTabRGB(QWidget):
         to session start (0, 0), plus a light trail of recent poses.
         Reuses the same OpenCV-canvas-to-QLabel technique as the
         histogram in the original version of this tab -- no new
-        dependencies.
+        dependencies. Colors are pulled from the active theme palette
+        on every redraw (canvases are baked pixels, not CSS, so this
+        is also re-run on theme change via theme_manager.on_change()).
         """
+        p = theme_manager.palette()
+        bg_color     = _hex_to_bgr(p['bg0'])
+        grid_color   = _hex_to_bgr(p['border2'])
+        axis_color   = _hex_to_bgr(p['border'])
+        text_color   = _hex_to_bgr(p['muted'])
+        start_color  = _hex_to_bgr(p['blue'])
+        trail_color  = _hex_to_bgr(p['border'])
+        weed_color   = _hex_to_bgr(p['blue'])
+        cls_color    = _hex_to_bgr(p['amber'])
+        flag_color   = _hex_to_bgr(p['teal'])
+
         H, W = 220, 460
         canvas = np.zeros((H, W, 3), dtype=np.uint8)
-        canvas[:] = (8, 10, 18)
+        canvas[:] = bg_color
 
         cx, cy = W // 2, H // 2
-        # Grid
         for x in range(0, W, 40):
-            cv2.line(canvas, (x, 0), (x, H), (25, 28, 40), 1)
+            cv2.line(canvas, (x, 0), (x, H), grid_color, 1)
         for y in range(0, H, 40):
-            cv2.line(canvas, (0, y), (W, y), (25, 28, 40), 1)
-        cv2.line(canvas, (cx, 0), (cx, H), (40, 45, 60), 1)
-        cv2.line(canvas, (0, cy), (W, cy), (40, 45, 60), 1)
+            cv2.line(canvas, (0, y), (W, y), grid_color, 1)
+        cv2.line(canvas, (cx, 0), (cx, H), axis_color, 1)
+        cv2.line(canvas, (0, cy), (W, cy), axis_color, 1)
 
         pts = [e.pose for e in self._events if e.pose]
-        pts = [(p.get('x'), p.get('y')) for p in pts
-               if p.get('x') is not None and p.get('y') is not None]
+        pts = [(pp.get('x'), pp.get('y')) for pp in pts
+               if pp.get('x') is not None and pp.get('y') is not None]
 
         if not pts and not self._trail:
             cv2.putText(canvas, "No GPS/pose data yet this session",
                         (20, cy), cv2.FONT_HERSHEY_SIMPLEX, 0.4,
-                        (120, 120, 140), 1, cv2.LINE_AA)
+                        text_color, 1, cv2.LINE_AA)
             self._show(self.lbl_map, cv2.cvtColor(canvas, cv2.COLOR_BGR2RGB))
             return
 
-        all_x = [p[0] for p in pts] + [p[0] for p in self._trail]
-        all_y = [p[1] for p in pts] + [p[1] for p in self._trail]
+        all_x = [pp[0] for pp in pts] + [pp[0] for pp in self._trail]
+        all_y = [pp[1] for pp in pts] + [pp[1] for pp in self._trail]
         span = max(max(abs(v) for v in all_x + all_y), 0.5) * 1.2
         px_per_m = min(W, H) / 2 / span
 
@@ -489,10 +542,10 @@ class AnalysisTabRGB(QWidget):
             trail_pts = [to_px(x, y) for x, y in self._trail]
             for i in range(len(trail_pts) - 1):
                 cv2.line(canvas, trail_pts[i], trail_pts[i + 1],
-                          (60, 60, 90), 1, cv2.LINE_AA)
+                          trail_color, 1, cv2.LINE_AA)
 
         # Session start marker
-        cv2.drawMarker(canvas, (cx, cy), (100, 200, 255),
+        cv2.drawMarker(canvas, (cx, cy), start_color,
                         cv2.MARKER_CROSS, 10, 1)
 
         # Spray points — color by mode, ring for CLS-flagged
@@ -503,15 +556,15 @@ class AnalysisTabRGB(QWidget):
             if x is None or y is None:
                 continue
             px, py = to_px(x, y)
-            color = (80, 200, 255) if e.mode == 'weed' else (255, 160, 60)
+            color = weed_color if e.mode == 'weed' else cls_color
             cv2.circle(canvas, (px, py), 4, color, -1, cv2.LINE_AA)
             if e.flagged_cls:
-                cv2.circle(canvas, (px, py), 7, (0, 220, 220), 1, cv2.LINE_AA)
+                cv2.circle(canvas, (px, py), 7, flag_color, 1, cv2.LINE_AA)
 
         cv2.putText(canvas, f"{len(pts)} located spray(s)  |  scale: "
                               f"{span:.1f}m half-width",
                     (8, H - 8), cv2.FONT_HERSHEY_SIMPLEX, 0.35,
-                    (120, 120, 140), 1, cv2.LINE_AA)
+                    text_color, 1, cv2.LINE_AA)
 
         self._show(self.lbl_map, cv2.cvtColor(canvas, cv2.COLOR_BGR2RGB))
 
