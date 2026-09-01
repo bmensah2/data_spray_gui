@@ -20,7 +20,7 @@ from gui.shared_log import UnifiedLog, LogPanel
 from gui.panels.gantry_panel import GantryPanel
 from gui.panels.dual_camera_panel import DualCameraPanel
 from gui.panels.acquisition_panel_rgb import AcquisitionPanelRGB
-from gui.panels.navigation_panel import NavigationPanel
+from gui.panels.navigation_panel_rgb import NavigationPanelRGB as NavigationPanel
 
 
 class CollectionTab(QWidget):

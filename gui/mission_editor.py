@@ -27,7 +27,7 @@ from PyQt5.QtWidgets import (
 )
 from PyQt5.QtCore import Qt
 
-# ── Constants (mirror navigation_panel.py) ────────────────────
+# ── Constants (mirror navigation_panel_rgb.py) ─────────────────
 HUSKY_IP       = "192.168.131.1"
 HUSKY_USER     = "administrator"
 MISSIONS_HUSKY = "~/missions"
