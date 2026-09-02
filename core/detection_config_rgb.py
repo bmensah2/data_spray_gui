@@ -214,6 +214,20 @@ class ZoneConfig:
     # silently wasting herbicide/fungicide with nothing flagging it.
     max_continuous_spray_warn_s: float = 5.0
 
+    # Classes that must NEVER trigger a spray, regardless of detection
+    # confidence -- the crop itself is the obvious case (spraying
+    # herbicide on your own sugarbeet defeats the entire point of a
+    # precision sprayer). This is an EXCLUDE list rather than an
+    # allow list of weed species deliberately: adding a new weed
+    # species class to a retrained model should not silently make it
+    # spray-eligible without deliberate review, but it's also
+    # unreasonable to require every future weed class be explicitly
+    # allow-listed here just to work. The one class that must always
+    # be excluded, in every mode, is the crop.
+    non_spray_classes: List[str] = field(
+        default_factory=lambda: ["sugarbeet"]
+    )
+
     def cam1_zones(self) -> List[Tuple[int, int, int, int]]:
         """Return cam1 zone rects: [ZoneA, ZoneB1]."""
         return [

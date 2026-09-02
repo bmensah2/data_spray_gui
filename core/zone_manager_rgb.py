@@ -249,13 +249,26 @@ class ZoneManagerRGB:
         Route each detection to the correct zone based on cx,cy.
         Left camera detections → ZoneA / ZoneB1
         Right camera detections → ZoneB2 / ZoneC
+
+        Detections whose class is in cfg.zones.non_spray_classes (the
+        crop itself, at minimum) never reach a zone's
+        current_detections at all -- they're filtered out here, before
+        the debounce counter or any spray decision ever sees them.
+        This is the single point every spray-eligibility check flows
+        through; filtering here means a non-spray class categorically
+        cannot trigger a nozzle regardless of confidence or how long
+        it stays in view.
         """
+        non_spray = set(self.cfg.zones.non_spray_classes)
+
         # Clear previous frame's detections
         for zone in self.zones:
             zone.current_detections = []
 
         # Route left camera detections
         for det in dual_result.left.detections:
+            if det.class_name in non_spray:
+                continue
             for zone in self.zones:
                 if zone.camera == "left" and zone.contains(det.cx, det.cy):
                     zone.current_detections.append(det)
@@ -263,6 +276,8 @@ class ZoneManagerRGB:
 
         # Route right camera detections
         for det in dual_result.right.detections:
+            if det.class_name in non_spray:
+                continue
             for zone in self.zones:
                 if zone.camera == "right" and zone.contains(det.cx, det.cy):
                     zone.current_detections.append(det)
@@ -583,6 +598,56 @@ if __name__ == "__main__":
     print(f"  ZoneB1 rect: {manager.zones[ZONE_B1].pixel_rect} ✓")
     print(f"  ZoneB2 rect: {manager.zones[ZONE_B2].pixel_rect} ✓")
     print(f"  ZoneC  rect: {manager.zones[ZONE_C].pixel_rect}  ✓")
+    print()
+
+    # ── Test 9: non_spray_classes (crop) never triggers a spray ──
+    print("Test 9: sugarbeet (non_spray_classes) never triggers a nozzle")
+    cfg9 = get_weed_config()
+    assert "sugarbeet" in cfg9.zones.non_spray_classes, (
+        "sugarbeet must be excluded by default -- this is a real "
+        "safety requirement (don't spray herbicide on the crop), "
+        "not just a config default"
+    )
+    manager9 = ZoneManagerRGB(cfg9)
+
+    # Reset the split back to the default the earlier tests may have
+    # changed via update_b_split(), so Zone A coordinates match det()'s
+    # defaults again for this test.
+    manager9.update_b_split(b1_split_x=1150, b2_split_x=900)
+
+    # Feed MANY more frames than the trigger threshold, high confidence,
+    # squarely inside Zone A -- if the exclusion filter didn't work,
+    # this would trigger a spray almost immediately.
+    for _ in range(20):
+        decision = manager9.update(
+            make_dual([det(500, 500, "left", name="sugarbeet")], []))
+        assert decision.nozzles_to_fire == [], (
+            "sugarbeet must NEVER appear in nozzles_to_fire, no matter "
+            "how long it's been detected"
+        )
+        assert manager9.zones[ZONE_A].current_detections == [], (
+            "sugarbeet detections must not even reach current_detections "
+            "-- filtered before the debounce counter sees them"
+        )
+    assert manager9.zones[ZONE_A].counter == 0, (
+        f"debounce counter must stay at 0 for an excluded class, "
+        f"got {manager9.zones[ZONE_A].counter}"
+    )
+    print(f"  20 frames of sugarbeet in Zone A -- nozzle never fired ✓")
+    print(f"  Zone A debounce counter stayed at 0 ✓")
+
+    # A real weed class in the SAME zone, immediately after, still
+    # works normally -- confirms the filter is class-specific, not a
+    # broken zone.
+    for _ in range(4):
+        decision9b = manager9.update(
+            make_dual([det(500, 500, "left", name="kochia")], []))
+    assert 0 in decision9b.nozzles_to_fire, (
+        "a real weed class in the same zone must still trigger normally "
+        "-- the exclusion must be class-specific, not zone-wide"
+    )
+    print(f"  kochia in the same zone still fires normally ✓ "
+          f"(exclusion is class-specific, not zone-wide)")
     print()
 
     print("=" * 60)
