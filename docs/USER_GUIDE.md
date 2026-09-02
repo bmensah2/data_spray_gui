@@ -275,9 +275,19 @@ yolo_dataset/
 
 If your dataset came from an external export tool, it may already
 have a `data_rgb.yaml` and `classes.json` written — worth checking
-(`ls`, `cat`) before assuming you need to generate one. If the paths
-and class list in an existing `data_rgb.yaml` already look correct,
-use `--validate-only` below rather than regenerating it.
+(`ls`, `cat`) before assuming you need to generate one. **Don't
+assume an existing `data_rgb.yaml`'s `path:` field is correct just
+because the file exists** — a dataset copied over from another
+machine, drive, or export pipeline can carry a stale `path:` pointing
+at wherever it was originally generated (seen in practice: a dataset
+exported with `path: /data/Bright_Data/yolo_dataset` when it actually
+lived at a completely different mount point on this machine).
+Training against a wrong path either fails outright or, worse, can
+silently resolve against the wrong data if a directory with that
+stale path happens to exist. If the `path:` doesn't match where the
+dataset actually is, **don't use `--validate-only`** — run
+`prepare_rgb_dataset.py` normally so it rewrites `data_rgb.yaml` with
+the correct real path, then verify with `cat` before training.
 
 A quick manual sanity check before running anything is also worth
 doing on a dataset you haven't used before:
@@ -356,6 +366,57 @@ best. Specifically, don't read too much into:
   conclusion, and only trust the comparison once all three have run
   their full epoch count.
 
+**Comparing multiple datasets** — if you're testing more than one
+dataset (e.g. deciding between two label exports, or checking whether
+a finding holds across datasets), give each comparison run its own
+`--project` and `--out` so results don't collide or get silently
+overwritten:
+```bash
+python3 compare_yolo_models_rgb.py --dataset /path/to/dataset1/data_rgb.yaml \
+    --epochs 100 --project runs/aben_rgb_dataset1 --out model_comparison_rgb_dataset1.json
+
+python3 compare_yolo_models_rgb.py --dataset /path/to/dataset2/data_rgb.yaml \
+    --epochs 100 --project runs/aben_rgb_dataset2 --out model_comparison_rgb_dataset2.json
+```
+
+**Plot the results:**
+```bash
+python3 plot_model_comparison.py --report model_comparison_rgb_dataset1.json
+```
+Generates 6 PNG figures in `comparison_figures/`: overall metrics,
+per-class recall, per-class precision, a speed-vs-accuracy scatter
+(the actual deployment trade-off, one point per model), training
+time, and row-normalized confusion matrices (one heatmap per model —
+the `background` row/column shows missed and false detections, which
+is often more informative than the aggregate mAP number for spotting
+a specific class problem). Requires `matplotlib` (already a
+dependency of `ultralytics` itself).
+
+To compare two datasets' results side by side in the same figures:
+```bash
+python3 plot_model_comparison.py \
+    --report model_comparison_rgb_dataset1.json model_comparison_rgb_dataset2.json \
+    --labels dataset1 dataset2 --out-dir figures_combined
+```
+
+**If one class detects noticeably worse than the others**, the
+per-class recall figure above will show it clearly, but it won't tell
+you *why*. `check_edge_truncation.py` checks one common, purely
+structural cause directly from your label files (no image inspection
+needed): whether that class's annotations are disproportionately cut
+off at the frame edge compared to the others, which is intrinsically
+harder for a detector to learn regardless of label quality or data
+volume.
+```bash
+python3 check_edge_truncation.py --dataset /path/to/yolo_dataset
+```
+Prints a per-class edge-touch-rate table and an explicit verdict
+(disproportionately edge-truncated / not clearly worse / low) — worth
+running before assuming a class-specific weakness is a labeling or
+training problem. If the edge-touch rate comes back unremarkable,
+look at label consistency/quality for that class next, or whether
+it's frequently occluded by other plants in your actual field layout.
+
 ### 4. Evaluate a specific model
 
 ```bash
@@ -387,6 +448,15 @@ with a real model; only the pre-training stub-mode display would be
 stale. Worth updating that fallback dict to match your latest dataset
 anyway, purely so stub-mode testing (no model loaded) shows accurate
 class names too.
+
+**Before your first real session with a new model**, confirm your
+crop class is still listed in `ZoneConfig.non_spray_classes`
+(`core/detection_config_rgb.py`, default `['sugarbeet']`) — this
+filter is independent of the model and doesn't automatically know
+what your new model's crop class is called if you ever rename it or
+add a different crop. See
+[SAFETY.md](SAFETY.md#non-spray-classes-crop-protection) for why
+this matters.
 
 ---
 
@@ -458,6 +528,13 @@ continuous-spray warning (see
 advisory, not a bug, but worth checking what the camera is actually
 seeing.
 
+**A detected plant never gets sprayed even though it's clearly
+visible and correctly identified** — check whether its class is in
+`non_spray_classes` (default: `sugarbeet`). This is intentional — see
+[SAFETY.md](SAFETY.md#non-spray-classes-crop-protection) — the
+system will never spray a detection whose class is on that list,
+regardless of confidence.
+
 **CUDA unavailable during training** — see
 [step 1 of the training workflow](#yolo-model-training--deployment)
 above; this is a Jetson-specific PyTorch wheel issue, not a code bug.
@@ -489,7 +566,7 @@ For anyone extending this codebase — a brief map of what lives where:
 | `core/detection_config_rgb.py` | All configuration dataclasses (`RGBConfig` and friends) |
 | `gantry_detection/gantry_detection.ino` | Arduino firmware, including the comms watchdog |
 | `navigation/` | Scripts that run on the Husky's own onboard PC (separate ROS environment) |
-| `train_yolo_rgb.py`, `compare_yolo_models_rgb.py`, `evaluate_model_rgb.py`, `prepare_rgb_dataset.py`, `check_yolo_env.py` | The training pipeline |
+| `train_yolo_rgb.py`, `compare_yolo_models_rgb.py`, `evaluate_model_rgb.py`, `prepare_rgb_dataset.py`, `check_yolo_env.py`, `check_edge_truncation.py`, `plot_model_comparison.py` | The training pipeline |
 
 Most core modules have a `python3 <module>.py` self-test at the
 bottom — run them directly to sanity-check that module in isolation

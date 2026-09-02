@@ -120,6 +120,29 @@ controls are ever enabled at a time.**
 If a tab's movement buttons look greyed out, this is why — check
 which tab is currently armed.
 
+## Non-spray classes (crop protection)
+
+The system will never spray a detection whose class is in
+`ZoneConfig.non_spray_classes` (default: `['sugarbeet']`), regardless
+of confidence or how long it's been in view. This is enforced at the
+earliest possible point — `ZoneManagerRGB._assign_detections()` — so
+a non-spray-class detection never even reaches a zone's debounce
+counter, let alone triggers a nozzle.
+
+This matters because nothing else in the detection pipeline
+distinguishes crop from weed on its own: the detection engine reports
+whatever classes the model was trained on, and without this filter,
+a correctly-identified crop detection would be treated exactly like a
+weed detection and could trigger a spray. The exclusion list exists
+specifically to prevent that — spraying herbicide on your own crop.
+
+This is deliberately an **exclude list, not an allow list** of weed
+species: a newly retrained model that adds another weed species
+should spray-trigger on it by default without any config changes, but
+the crop itself must always be excluded, in every mode, with no
+exceptions. If you ever need to exclude an additional class (e.g. a
+cover crop), add it to `non_spray_classes` — it's a list already.
+
 ## Pump/nozzle sequencing
 
 The firmware itself enforces: pump off automatically closes all

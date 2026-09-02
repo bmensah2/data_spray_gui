@@ -29,7 +29,7 @@ robot pose for downstream analysis.
 | **`gantry_detection/`** | Arduino firmware for the nozzle/pump/light controller |
 | **`navigation/`** | Scripts that run on the Husky's own onboard PC |
 | **`tools/`** | Standalone field utilities (image capture, spray demo) |
-| **`train_yolo_rgb.py`**, **`compare_yolo_models_rgb.py`**, **`evaluate_model_rgb.py`**, **`prepare_rgb_dataset.py`**, **`check_yolo_env.py`** | The full YOLO training pipeline — see [Training a detection model](#training-a-detection-model) below |
+| **`train_yolo_rgb.py`**, **`compare_yolo_models_rgb.py`**, **`evaluate_model_rgb.py`**, **`prepare_rgb_dataset.py`**, **`check_yolo_env.py`**, **`check_edge_truncation.py`**, **`plot_model_comparison.py`** | The full YOLO training pipeline — see [Training a detection model](#training-a-detection-model) below |
 
 Full details on every tab, every safety system, and the training
 workflow are in **[`docs/USER_GUIDE.md`](docs/USER_GUIDE.md)**.
@@ -111,14 +111,25 @@ python3 train_yolo_rgb.py --dataset /path/to/yolo_dataset/data_rgb.yaml --model 
 
 # ...or train and compare all three on the same dataset
 python3 compare_yolo_models_rgb.py --dataset /path/to/yolo_dataset/data_rgb.yaml --epochs 100
+
+# 4. Plot the comparison results
+python3 plot_model_comparison.py --report model_comparison_rgb.json
 ```
 
 `compare_yolo_models_rgb.py` reports mAP, mask AP, and inference
 speed side by side and deliberately does **not** auto-pick a winner —
 on a real-time spray robot, a slower but marginally more accurate
-model isn't necessarily the better choice. See
+model isn't necessarily the better choice. If one class detects
+noticeably worse than the others, `check_edge_truncation.py` checks a
+common structural cause (annotations disproportionately cut off at
+the frame edge) directly from your label files. See
 [`docs/USER_GUIDE.md`](docs/USER_GUIDE.md#yolo-model-training--deployment)
 for the full workflow, including how to deploy the model you pick.
+
+**Note:** the system never sprays a detection whose class is in
+`non_spray_classes` (default: your crop, `sugarbeet`), regardless of
+confidence — see
+[`docs/SAFETY.md`](docs/SAFETY.md#non-spray-classes-crop-protection).
 
 ## Theming
 
