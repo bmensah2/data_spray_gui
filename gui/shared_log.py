@@ -33,24 +33,26 @@ class UnifiedLog(QPlainTextEdit):
     Thread-safe log widget. Accepts messages from any thread
     via append_signal → _do_append (runs in GUI thread).
 
-    Sources and their colors:
-        GANTRY  → green   #00c896
-        CAMERA  → blue    #4ab4ff
-        DETECT  → amber   #f5a623
-        NAV     → purple  #b060d0
-        SYS     → grey    #6b7280
-        ANALYSIS→ teal    #00a0c0
+    Sources and their palette roles:
+        GANTRY   → green
+        CAMERA   → blue
+        DETECT   → amber
+        NAV      → purple
+        SYS      → dim
+        ANALYSIS → teal
     """
 
     append_signal = pyqtSignal(str, str, str)
 
-    _TAG = {
-        "send":  "#4a9eff",
-        "recv":  "#9ca3af",
-        "ok":    "#00c896",
-        "error": "#e84545",
-        "warn":  "#f5a623",
-        "info":  "#6b7280",
+    # Palette role keys (not hex) -- resolved fresh against the active
+    # theme in _do_append(), same pattern as _SRC_ROLE below.
+    _TAG_ROLE = {
+        "send":  "blue",
+        "recv":  "muted",
+        "ok":    "green",
+        "error": "red",
+        "warn":  "amber",
+        "info":  "dim",
     }
     _PFX = {
         "send":  "►",
@@ -82,7 +84,7 @@ class UnifiedLog(QPlainTextEdit):
         p = theme_manager.palette()
         role = UnifiedLog._SRC_ROLE.get(source)
         if role is None:
-            return "#9ca3af"
+            return p["muted"]
         return p.get(role, p["muted"])
 
     def log(self, source: str, msg: str, tag: str = "info"):
@@ -96,7 +98,7 @@ class UnifiedLog(QPlainTextEdit):
     def _do_append(self, source: str, msg: str, tag: str):
         p     = theme_manager.palette()
         src_c = self.source_color(source)
-        msg_c = self._TAG.get(tag,    "#9ca3af")
+        msg_c = p.get(self._TAG_ROLE.get(tag), p["muted"])
         pfx   = self._PFX.get(tag,    "·")
         ts    = time.strftime("%H:%M:%S")
 
