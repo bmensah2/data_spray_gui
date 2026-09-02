@@ -39,7 +39,8 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtCore import Qt, QTimer
 from PyQt5.QtGui import QImage, QPixmap
 
-from gui.style import BTN_GREEN, BTN_RED, _muted, _sec
+from gui.style import _muted, _sec
+from gui.theme_manager import theme_manager
 from gui.shared_log import UnifiedLog
 
 try:
@@ -452,14 +453,14 @@ class DualCameraPanel:
         """
         bar = QWidget()
         bar.setFixedHeight(44)
-        bar.setStyleSheet("background-color:#0a0d14;")
+        theme_manager.register_widget(bar, lambda p: f"background-color:{p['bg0']};")
         lay = QHBoxLayout(bar)
         lay.setContentsMargins(6, 4, 6, 4)
         lay.setSpacing(6)
 
         # Connect button
         connect_btn = QPushButton("🔌  CONNECT")
-        connect_btn.setStyleSheet(BTN_GREEN)
+        theme_manager.register_button(connect_btn, "green")
         connect_btn.setFixedHeight(32)
         connect_btn.setMinimumWidth(110)
         connect_btn.clicked.connect(self._on_connect_btn)
@@ -468,7 +469,7 @@ class DualCameraPanel:
 
         # Start / Stop button
         start_btn = QPushButton("▶  START")
-        start_btn.setStyleSheet(BTN_GREEN)
+        theme_manager.register_button(start_btn, "green")
         start_btn.setFixedHeight(32)
         start_btn.setMinimumWidth(90)
         start_btn.setEnabled(False)
@@ -482,13 +483,16 @@ class DualCameraPanel:
         disp_combo.addItems(DISPLAY_MODES)
         disp_combo.setFixedHeight(28)
         disp_combo.setMinimumWidth(130)
-        disp_combo.setStyleSheet(
-            "QComboBox{background:#1a1e2e;color:#e8eaf0;"
-            "border:1px solid #3a4055;border-radius:3px;"
-            "padding:2px 6px;font-family:'Noto Sans',Arial,sans-serif;font-size:9px;}"
-            "QComboBox::drop-down{border:none;}"
-            "QComboBox QAbstractItemView{background:#1a1e2e;"
-            "color:#e8eaf0;selection-background-color:#2e3448;}")
+        theme_manager.register_widget(
+            disp_combo, lambda p: (
+                f"QComboBox{{background:{p['input_bg']};color:{p['text']};"
+                f"border:1px solid {p['border']};border-radius:3px;"
+                f"padding:2px 6px;font-family:'Noto Sans',Arial,sans-serif;"
+                f"font-size:9px;}}"
+                f"QComboBox::drop-down{{border:none;}}"
+                f"QComboBox QAbstractItemView{{background:{p['input_bg']};"
+                f"color:{p['text']};"
+                f"selection-background-color:{p['btn_bg']};}}"))
         lay.addWidget(disp_combo)
         self._disp_mode_combos.append(disp_combo)
 
@@ -496,9 +500,10 @@ class DualCameraPanel:
 
         # Status label
         status_lbl = QLabel("Disconnected")
-        status_lbl.setStyleSheet(
-            "color:#8090a8;font-size:9px;"
-            "font-family:'Noto Sans',Arial,sans-serif;")
+        theme_manager.register_widget(
+            status_lbl, lambda p: (
+                f"color:{p['muted']};font-size:9px;"
+                f"font-family:'Noto Sans',Arial,sans-serif;"))
         lay.addWidget(status_lbl)
         self._status_lbls.append(status_lbl)
 
@@ -516,12 +521,13 @@ class DualCameraPanel:
 
         lbl = QLabel("Camera not started")
         lbl.setAlignment(Qt.AlignCenter)
-        lbl.setStyleSheet(
-            "background-color:#050810;"
-            "color:#3a4055;"
-            "font-family:'Noto Sans',Arial,sans-serif;"
-            "font-size:11px;"
-            "border:1px solid #1a1e2e;")
+        theme_manager.register_widget(
+            lbl, lambda p: (
+                f"background-color:{p['bg0']};"
+                f"color:{p['border']};"
+                f"font-family:'Noto Sans',Arial,sans-serif;"
+                f"font-size:11px;"
+                f"border:1px solid {p['input_bg']};"))
         lbl.setSizePolicy(
             QSizePolicy.Expanding, QSizePolicy.Expanding)
         # Keep aspect ratio scaling — pixmap fills label on resize
@@ -553,10 +559,10 @@ class DualCameraPanel:
             try:
                 if connected:
                     btn.setText("🔌  DISCONNECT")
-                    btn.setStyleSheet(BTN_RED)
+                    theme_manager.register_button(btn, "red")
                 else:
                     btn.setText("🔌  CONNECT")
-                    btn.setStyleSheet(BTN_GREEN)
+                    theme_manager.register_button(btn, "green")
             except RuntimeError:
                 pass   # widget deleted
 
@@ -565,10 +571,10 @@ class DualCameraPanel:
                 btn.setEnabled(connected)
                 if acquiring:
                     btn.setText("⏹  STOP")
-                    btn.setStyleSheet(BTN_RED)
+                    theme_manager.register_button(btn, "red")
                 else:
                     btn.setText("▶  START")
-                    btn.setStyleSheet(BTN_GREEN)
+                    theme_manager.register_button(btn, "green")
             except RuntimeError:
                 pass
 
@@ -576,19 +582,23 @@ class DualCameraPanel:
             try:
                 if acquiring:
                     lbl.setText(f"● LIVE  —  {self.camera_model}")
-                    lbl.setStyleSheet(
-                        "color:#4ab4ff;font-size:9px;"
-                        "font-family:'Noto Sans',Arial,sans-serif;font-weight:bold;")
+                    theme_manager.register_widget(
+                        lbl, lambda p: (
+                            f"color:{p['blue']};font-size:9px;"
+                            f"font-family:'Noto Sans',Arial,sans-serif;"
+                            f"font-weight:bold;"))
                 elif connected:
                     lbl.setText(f"Connected  —  {self.camera_model}")
-                    lbl.setStyleSheet(
-                        "color:#60c0a0;font-size:9px;"
-                        "font-family:'Noto Sans',Arial,sans-serif;")
+                    theme_manager.register_widget(
+                        lbl, lambda p: (
+                            f"color:{p['green']};font-size:9px;"
+                            f"font-family:'Noto Sans',Arial,sans-serif;"))
                 else:
                     lbl.setText("Disconnected")
-                    lbl.setStyleSheet(
-                        "color:#8090a8;font-size:9px;"
-                        "font-family:'Noto Sans',Arial,sans-serif;")
+                    theme_manager.register_widget(
+                        lbl, lambda p: (
+                            f"color:{p['muted']};font-size:9px;"
+                            f"font-family:'Noto Sans',Arial,sans-serif;"))
             except RuntimeError:
                 pass
 
