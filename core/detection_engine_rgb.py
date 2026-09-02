@@ -189,15 +189,19 @@ class RGBDetectionEngine:
     """
 
     # Class names — will be replaced by model.names after loading
-    # Matches the class map from the multispectral pipeline
+    # (Ultralytics stores the trained class list inside the .pt
+    # checkpoint itself, so once a real model loads this dict is
+    # overwritten with the correct names/order automatically — this
+    # is purely the stub-mode fallback shown before any model exists).
+    # Matches yolo_dataset_20/classes.json as of the first real
+    # multiweed_detection training dataset (2026 summer data).
     DEFAULT_CLASS_NAMES = {
         0: 'sugarbeet',
-        1: 'kochia_res',
-        2: 'kochia_sus',
-        3: 'waterhemp_res',
-        4: 'waterhemp_sus',
-        5: 'ragweed_res',
-        6: 'ragweed_sus',
+        1: 'kochia',
+        2: 'waterhemp',
+        3: 'common_ragweed',
+        4: 'common_lambsquaters',
+        5: 'unknown_weed',
     }
 
     def __init__(self, cfg: RGBConfig):
