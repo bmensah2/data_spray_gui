@@ -273,6 +273,23 @@ yolo_dataset/
 └── data_rgb.yaml
 ```
 
+If your dataset came from an external export tool, it may already
+have a `data_rgb.yaml` and `classes.json` written — worth checking
+(`ls`, `cat`) before assuming you need to generate one. If the paths
+and class list in an existing `data_rgb.yaml` already look correct,
+use `--validate-only` below rather than regenerating it.
+
+A quick manual sanity check before running anything is also worth
+doing on a dataset you haven't used before:
+```bash
+find <dataset>/images/train -type f | wc -l
+find <dataset>/labels/train -type f -name "*.txt" | wc -l
+```
+Image and label counts should match on both splits. `prepare_rgb_dataset.py`
+below checks this properly (including which specific files don't
+pair up), but a quick count first catches an obviously wrong path
+immediately.
+
 ```bash
 python3 prepare_rgb_dataset.py --dataset /path/to/yolo_dataset \
     --classes <your classes in class-id order> \
@@ -281,7 +298,10 @@ python3 prepare_rgb_dataset.py --dataset /path/to/yolo_dataset \
 This checks every image has a matching label and vice versa, prints
 per-class annotation counts for train/val (a good moment to notice a
 badly underrepresented class before spending hours training on it),
-and writes `data_rgb.yaml` unless `--validate-only` is given.
+and writes `data_rgb.yaml` unless `--validate-only` is given. Aim for
+100% pairing (paired count == image count == label count on both
+splits) before training — any mismatch means something is wrong with
+the export, not something training will work around.
 
 ### 3. Train
 
@@ -314,6 +334,28 @@ hardware/dataset before committing hours. Consider running the real
 comparison inside `tmux`/`screen` so it survives a disconnected
 terminal.
 
+**Reading a smoke-test result correctly** — a short run (2 epochs) is
+for confirming the pipeline *works*, not for judging which model is
+best. Specifically, don't read too much into:
+- **Low mAP at 2 epochs** — none of these models have converged yet;
+  0.1–0.2 mAP50-95 after 2 epochs is normal and not predictive of the
+  100-epoch result.
+- **The training-time column** — the script trains each family in the
+  same process, one after another. The *first* model trained absorbs
+  most of the one-time CUDA/cuDNN warm-up cost (visible in the raw
+  per-epoch logs as a much slower epoch 1 than epoch 2), which makes
+  it look artificially slower in a short smoke test. Over a full
+  100-epoch run this bias becomes negligible, but don't conclude
+  "model X is slower to train" from a 2-epoch smoke test's timing
+  alone.
+- **YOLO26 in particular** may show a different early-training curve
+  than v8/v11 — it uses a different optimizer (MuSGD) and has an
+  extra loss term (visible as `sem_loss` in `results.csv`) that v8/v11
+  don't have. A lower mAP at epoch 2 doesn't mean it's worse; check
+  whether it's still improving epoch to epoch before drawing any
+  conclusion, and only trust the comparison once all three have run
+  their full epoch count.
+
 ### 4. Evaluate a specific model
 
 ```bash
@@ -332,6 +374,19 @@ when Detection is armed. `train_yolo_rgb.py` does this copy
 automatically unless you override `--models-dest-name` (useful during
 a comparison run, so intermediate models don't clobber what's
 currently deployed).
+
+Class names don't need any manual configuration after training —
+Ultralytics stores the trained class list inside the `.pt` checkpoint
+itself, and `RGBDetectionEngine` reads `model.names` from it
+automatically on load. The class names hardcoded in
+`core/detection_engine_rgb.py` (`DEFAULT_CLASS_NAMES`) are only a
+stub-mode fallback shown before any real model is loaded — if you
+retrain with a different class list than what's currently in that
+fallback, the GUI will still show the *correct* classes once armed
+with a real model; only the pre-training stub-mode display would be
+stale. Worth updating that fallback dict to match your latest dataset
+anyway, purely so stub-mode testing (no model loaded) shows accurate
+class names too.
 
 ---
 
