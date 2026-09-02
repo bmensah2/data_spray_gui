@@ -101,7 +101,7 @@ class _DPadWidget(QWidget):
         C_IDLE   = QColor(pal["btn_bg"])
         C_ACTIVE = QColor(pal["amber"])
         C_RING   = QColor(pal["border"])
-        C_ARROW  = QColor("#ffffff")
+        C_ARROW  = QColor(pal["text"])
         C_BG     = QColor(pal["bg0"])
 
         # Background circle
@@ -139,7 +139,7 @@ class _DPadWidget(QWidget):
         painter.drawEllipse(QRectF(cx-cr, cy-cr, cr*2, cr*2))
 
         # Center dot
-        painter.setBrush(QBrush(QColor("#ffffff")))
+        painter.setBrush(QBrush(QColor(pal["text"])))
         dr = cr * 0.42
         painter.drawEllipse(QRectF(cx-dr, cy-dr, dr*2, dr*2))
 
@@ -165,7 +165,8 @@ class _DPadWidget(QWidget):
         """Draw ∧ or ∨ chevron."""
         from PyQt5.QtGui import QPen, QColor, QPolygonF
         from PyQt5.QtCore import QPointF
-        p.setPen(QPen(QColor("#ffffff"), max(1.5, size*0.18),
+        pal = theme_manager.palette()
+        p.setPen(QPen(QColor(pal["text"]), max(1.5, size*0.18),
                       Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
         s = size
         if direction == "up":
@@ -184,7 +185,8 @@ class _DPadWidget(QWidget):
         from PyQt5.QtCore import QRectF
         import math
         pw = max(1.5, size * 0.18)
-        p.setPen(QPen(QColor("#ffffff"), pw,
+        pal = theme_manager.palette()
+        p.setPen(QPen(QColor(pal["text"]), pw,
                       Qt.SolidLine, Qt.RoundCap))
         r = size * 0.72
         rect = QRectF(cx-r, cy-r, r*2, r*2)
@@ -221,7 +223,7 @@ class _DPadWidget(QWidget):
                     y - size*(sin_a - cos_a*0.5)),
         ]
         p.setPen(Qt.NoPen)
-        p.setBrush(QBrush(QColor("#ffffff")))
+        p.setBrush(QBrush(QColor(theme_manager.palette()["text"])))
         p.drawPolygon(QPolygonF(pts))
 
     def mousePressEvent(self, event):

@@ -15,7 +15,8 @@ from PyQt5.QtWidgets import (
 )
 from PyQt5.QtCore import Qt
 
-from gui.style import STYLE, _divider, _muted
+from gui.style import _divider, _muted
+from gui.theme_manager import theme_manager
 from gui.shared_log import UnifiedLog, LogPanel
 from gui.panels.gantry_panel import GantryPanel
 from gui.panels.dual_camera_panel import DualCameraPanel
@@ -75,8 +76,8 @@ class CollectionTab(QWidget):
         # ── 3-panel splitter ──────────────────────────────────
         splitter = QSplitter(Qt.Horizontal)
         splitter.setHandleWidth(3)
-        splitter.setStyleSheet(
-            "QSplitter::handle{background-color:#2a2f3d;}")
+        theme_manager.register_widget(
+            splitter, lambda p: f"QSplitter::handle{{background-color:{p['border2']};}}")
 
         # ── LEFT: System panel (Gantry + Data Collection tabs) ──
         left_tabs = QTabWidget()
