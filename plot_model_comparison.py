@@ -354,11 +354,17 @@ def main():
     ap.add_argument("--labels", nargs="+", default=None,
                      help="Labels for each --report (default: filename stem). "
                           "Only meaningful with multiple --report files.")
-    ap.add_argument("--out-dir", default="comparison_figures",
-                     help="Output directory for PNG figures")
+    ap.add_argument("--out-dir", default=None,
+                     help="Output directory for PNG figures. Default: "
+                          "a 'comparison_figures' subfolder next to the "
+                          "first --report file -- i.e. inside runs/ "
+                          "alongside the report it was generated from, "
+                          "not the current working directory. Pass an "
+                          "explicit path to override.")
     args = ap.parse_args()
 
-    out_dir = Path(args.out_dir)
+    out_dir = (Path(args.out_dir) if args.out_dir is not None
+               else Path(args.report[0]).resolve().parent / "comparison_figures")
     out_dir.mkdir(parents=True, exist_ok=True)
 
     reports = load_reports(args.report, args.labels)

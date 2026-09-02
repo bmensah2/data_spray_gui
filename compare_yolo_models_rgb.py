@@ -283,8 +283,13 @@ def main():
                      help="Don't train -- just evaluate existing "
                           "<project>/<model>_rgb_v1/weights/best.pt "
                           "for each requested family")
-    ap.add_argument("--out", default="model_comparison_rgb.json",
-                     help="Output JSON report path")
+    ap.add_argument("--out", default=None,
+                     help="Output JSON report path. Default: "
+                          "<project>/model_comparison_rgb.json -- i.e. "
+                          "inside the same directory as the per-family "
+                          "run subdirectories it summarizes, not the "
+                          "current working directory. Pass an explicit "
+                          "path to override.")
     args = ap.parse_args()
 
     print("=" * 60)
@@ -313,7 +318,9 @@ def main():
 
     print_comparison_table(results)
 
-    out_path = Path(args.out)
+    out_path = (Path(args.out) if args.out is not None
+                else Path(args.project) / "model_comparison_rgb.json")
+    out_path.parent.mkdir(parents=True, exist_ok=True)
     with open(out_path, "w") as f:
         json.dump({
             "dataset": args.dataset,

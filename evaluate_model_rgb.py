@@ -167,8 +167,11 @@ def main():
         help="Inference image size — must match training imgsz (default: 640)"
     )
     ap.add_argument(
-        "--out", default="model_validation_rgb.json",
-        help="Output JSON path (default: model_validation_rgb.json)"
+        "--out", default=None,
+        help="Output JSON path. Default: <run_dir>/model_validation_rgb.json "
+             "-- i.e. next to the weights being evaluated (in the same "
+             "directory as training_summary.json), not the current "
+             "working directory. Pass an explicit path to override."
     )
     args = ap.parse_args()
 
@@ -179,6 +182,19 @@ def main():
         print(f"✗ Dataset YAML not found: {args.dataset}", file=sys.stderr)
         sys.exit(1)
 
+    if args.out is None:
+        weights_path = Path(args.weights).resolve()
+        # Standard train_yolo_rgb.py layout is <run_dir>/weights/best.pt --
+        # put the report in <run_dir> itself, alongside training_summary.json.
+        # If weights don't follow that layout, fall back to their own folder
+        # rather than guessing further.
+        run_dir = (weights_path.parent.parent
+                   if weights_path.parent.name == "weights"
+                   else weights_path.parent)
+        out_path = run_dir / "model_validation_rgb.json"
+    else:
+        out_path = Path(args.out)
+
     print(f"Evaluating: {args.weights}")
     print(f"Dataset   : {args.dataset}")
     print(f"Device    : {args.device}  |  imgsz: {args.imgsz}")
@@ -186,7 +202,8 @@ def main():
 
     metrics = evaluate(args.weights, args.dataset, args.device, args.imgsz)
 
-    with open(args.out, "w") as f:
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(out_path, "w") as f:
         json.dump(metrics, f, indent=2)
 
     # ── Console summary ───────────────────────────────────────
@@ -225,9 +242,9 @@ def main():
             print(f"  {c['class_name']:<20} P={p:.3f}  R={r:.3f}  mAP={m:.3f}")
 
     print(f"\nSpeed: {metrics.get('speed_ms', {})}")
-    print(f"\nResults written → {args.out}")
+    print(f"\nResults written → {out_path}")
     print(f"{'='*55}")
-    print(f"\nNext: feed {args.out} into generate_report.js")
+    print(f"\nNext: feed {out_path} into generate_report.js")
 
 
 if __name__ == "__main__":
