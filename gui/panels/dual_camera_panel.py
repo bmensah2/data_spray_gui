@@ -34,7 +34,7 @@ import numpy as np
 
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout,
-    QLabel, QPushButton, QSizePolicy, QComboBox, QDialog, QListWidget
+    QLabel, QPushButton, QSizePolicy, QComboBox, QDialog
 )
 from PyQt5.QtCore import Qt, QTimer
 from PyQt5.QtGui import QImage, QPixmap
@@ -43,6 +43,7 @@ from gui.style import _muted, _sec
 from gui.theme_manager import theme_manager
 from gui.shared_log import UnifiedLog
 from gui.frame_text import put_text, text_size
+from gui.spray_event_table import build_spray_event_table, insert_spray_event_row
 
 try:
     from core.dual_emeet_camera import DualEMEETCamera, FramePair
@@ -714,50 +715,45 @@ class DualCameraPanel:
         # tracked control-bar instance.
         lay.addWidget(self.camera_control_bar(fullscreen_dialog=dlg))
 
-        body = QHBoxLayout()
+        body = QVBoxLayout()
         body.setContentsMargins(0, 0, 0, 0)
+        body.setSpacing(0)
 
         display = self.display_widget()
-        body.addWidget(display, stretch=1)
+        body.addWidget(display, stretch=3)
 
-        # Optional live spray-event mini-feed
-        events_list = None
+        # Optional live spray-event feed — same table format as
+        # Session Analysis's "Live Spray Event Feed" (Time, Zone,
+        # Nozzle, Class, Conf, Pose, GPS), via the shared
+        # gui/spray_event_table module so both stay in sync.
+        events_table = None
         if self.spray_event_source is not None:
-            events_list = QListWidget()
-            events_list.setFixedWidth(260)
-            theme_manager.register_widget(
-                events_list, lambda p: (
-                    f"QListWidget{{background-color:{p['bg0']};"
-                    f"color:{p['text_dim']};border:none;"
-                    f"border-left:1px solid {p['border2']};"
-                    f"font-family:'Noto Sans',Arial,sans-serif;"
-                    f"font-size:10px;}}"))
+            events_grp = QWidget()
+            eg_lay = QVBoxLayout(events_grp)
+            eg_lay.setContentsMargins(4, 4, 4, 4)
+            eg_title = _muted("Live Spray Event Feed")
+            eg_lay.addWidget(eg_title)
 
-            def _on_spray_event(event, lw=events_list):
+            events_table = build_spray_event_table()
+            events_table.setMaximumHeight(220)
+            eg_lay.addWidget(events_table)
+
+            def _on_spray_event(event, tbl=events_table):
                 try:
-                    ts = time.strftime("%H:%M:%S")
-                    names = ", ".join(
-                        d.get("class_name", "?") for d in event.detections)
-                    conf = max(
-                        (d.get("confidence", 0.0) for d in event.detections),
-                        default=0.0)
-                    lw.insertItem(
-                        0, f"{ts}  {event.zone_name}  {names} {conf:.2f}")
-                    while lw.count() > 50:
-                        lw.takeItem(lw.count() - 1)
+                    insert_spray_event_row(tbl, event)
                 except RuntimeError:
-                    pass   # dialog/list already destroyed
+                    pass   # dialog/table already destroyed
 
             self.spray_event_source.spray_event_signal.connect(_on_spray_event)
             spray_connection = (
                 self.spray_event_source.spray_event_signal, _on_spray_event)
-            body.addWidget(events_list)
+            body.addWidget(events_grp, stretch=1)
         else:
             spray_connection = None
 
         lay.addLayout(body, stretch=1)
 
-        dlg.register_cleanup(display, events_list, spray_connection)
+        dlg.register_cleanup(display, events_table, spray_connection)
         dlg.showFullScreen()
         return dlg
 

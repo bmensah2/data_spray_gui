@@ -37,22 +37,21 @@ import numpy as np
 
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout,
-    QLabel, QGroupBox, QPushButton, QTableWidget,
-    QTableWidgetItem, QHeaderView, QAbstractItemView
+    QLabel, QGroupBox, QPushButton
 )
 from PyQt5.QtCore import Qt, QTimer
-from PyQt5.QtGui import QImage, QPixmap, QColor
+from PyQt5.QtGui import QImage, QPixmap
 
 from gui.style import _divider, _muted, _sec
 from gui.theme_manager import theme_manager
 from gui.shared_log import UnifiedLog, LogPanel
+from gui.spray_event_table import (
+    build_spray_event_table, insert_spray_event_row, MAX_FEED_ROWS
+)
 
 
-# Cap how many rows the live feed table keeps on screen -- stats and
-# the map still use the FULL session event list regardless of this,
-# only the table view is capped for UI responsiveness over a long
-# session with many events.
-MAX_FEED_ROWS = 300
+# MAX_FEED_ROWS now lives in gui/spray_event_table.py (imported above)
+# so it stays in sync with the fullscreen popout's copy of this table.
 
 # Cap how many recent poses we keep for the map's light "path trail"
 # line. Spray-event markers are never capped -- every real spray this
@@ -167,26 +166,7 @@ class AnalysisTabRGB(QWidget):
         lay = QVBoxLayout(grp)
         lay.setContentsMargins(4, 4, 4, 4)
 
-        cols = ["Time", "Zone", "Nozzle", "Class", "Conf", "Pose (x,y)", "GPS"]
-        self.tbl_events = QTableWidget(0, len(cols))
-        self.tbl_events.setHorizontalHeaderLabels(cols)
-        self.tbl_events.horizontalHeader().setSectionResizeMode(
-            QHeaderView.Stretch)
-        self.tbl_events.verticalHeader().setVisible(False)
-        self.tbl_events.setEditTriggers(QAbstractItemView.NoEditTriggers)
-        self.tbl_events.setSelectionBehavior(QAbstractItemView.SelectRows)
-        self.tbl_events.setAlternatingRowColors(True)
-        theme_manager.register_widget(
-            self.tbl_events, lambda p: (
-                f"QTableWidget{{background-color:{p['bg0']};color:{p['text_dim']};"
-                f"font-family:'Noto Sans',Arial,sans-serif;font-size:10px;"
-                f"gridline-color:{p['border2']};border:1px solid {p['border2']};}}"
-                f"QHeaderView::section{{background-color:{p['bg3']};"
-                f"color:{p['muted']};padding:4px;border:1px solid {p['border2']};"
-                f"font-weight:bold;}}"
-                f"QTableWidget::item:alternate{{background-color:{p['bg2']};}}"
-                f"QTableWidget::item:selected{{background-color:{p['btn_bg']};}}"
-            ))
+        self.tbl_events = build_spray_event_table()
         lay.addWidget(self.tbl_events)
         return grp
 
@@ -331,37 +311,7 @@ class AnalysisTabRGB(QWidget):
         self._redraw_map()
 
     def _insert_feed_row(self, event):
-        names = [d.get('class_name', '?') for d in event.detections]
-        conf  = max((d.get('confidence', 0.0) for d in event.detections),
-                    default=0.0)
-        ts = datetime.datetime.fromtimestamp(event.timestamp).strftime("%H:%M:%S")
-        pose_str = "—"
-        if event.pose:
-            x, y = event.pose.get('x'), event.pose.get('y')
-            if x is not None and y is not None:
-                pose_str = f"{x:.2f}, {y:.2f}"
-        gps_str = "—"
-        if event.gps and event.gps.get('fix_valid'):
-            lat, lon = event.gps.get('lat'), event.gps.get('lon')
-            if lat is not None and lon is not None:
-                gps_str = f"{lat:.5f}, {lon:.5f}"
-
-        self.tbl_events.insertRow(0)  # newest first
-        row = [
-            ts, event.zone_name, f"N{event.nozzle_id + 1}",
-            ", ".join(names) or "—", f"{conf:.2f}", pose_str, gps_str,
-        ]
-        flag_color = QColor(theme_manager.palette()['amber'])
-        for col, text in enumerate(row):
-            item = QTableWidgetItem(text)
-            item.setTextAlignment(Qt.AlignCenter)
-            if event.flagged_cls:
-                item.setForeground(flag_color)
-            self.tbl_events.setItem(0, col, item)
-
-        # Cap displayed rows — full data stays in self._events regardless
-        while self.tbl_events.rowCount() > MAX_FEED_ROWS:
-            self.tbl_events.removeRow(self.tbl_events.rowCount() - 1)
+        insert_spray_event_row(self.tbl_events, event, max_rows=MAX_FEED_ROWS)
 
     # ── Stats ─────────────────────────────────────────────────
 
