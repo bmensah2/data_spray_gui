@@ -60,18 +60,18 @@ try:
 except ImportError:
     QT_AVAILABLE = False
 
-# Reuse the SAME acquisition + video pipeline used by the msCAM camera
-try:
-    from core.acquisition_manager import DataAcquisitionManager
-    from core.acquisition_config import (
-        AcquisitionConfig, CameraConfig, BandConfig
-    )
-    from core.video_recorder import (
-        MultispectralVideoRecorder, VideoRecordingConfig
-    )
-    ACQUISITION_AVAILABLE = True
-except ImportError:
-    ACQUISITION_AVAILABLE = False
+# Capture-session and video-recording support is fully self-contained
+# in this file (see _get_session_dir/_save_capture and
+# _SimpleDualStreamRecorder below) -- it used to import
+# core.acquisition_manager / core.acquisition_config / core.video_recorder,
+# none of which exist anywhere in this repo (leftover references from
+# a pre-RGB-pivot architecture). Rebuilt using the same proven
+# approach gui/panels/acquisition_panel_rgb.py already uses
+# successfully for the eMeet cameras: plain cv2.imwrite/cv2.VideoWriter
+# and a simple session-directory convention, rather than depending on
+# a more elaborate multispectral-oriented manager class that doesn't
+# even fit a single RGB-D camera well.
+import json
 
 # Reuse the SAME theme system used by the main GUI
 from gui.theme_manager import theme_manager
@@ -384,6 +384,81 @@ class RealSenseCamera:
 
 
 # ─────────────────────────────────────────────────────────────
+#  SIMPLE DUAL-STREAM VIDEO RECORDER
+# ─────────────────────────────────────────────────────────────
+
+class _SimpleDualStreamRecorder:
+    """
+    Self-contained replacement for the missing
+    core.video_recorder.MultispectralVideoRecorder, scoped to exactly
+    what this tool needs: two standard 8-bit video streams (color,
+    JET-colorized depth) via cv2.VideoWriter -- the same basic
+    approach already proven working in
+    gui/panels/acquisition_panel_rgb.py's own video recording.
+
+    Raw 16-bit depth is deliberately NOT handled by this class -- no
+    standard video codec supports 16-bit depth directly, so it's
+    saved as an independent per-frame lossless PNG sequence instead
+    (see _RealSensePanel._write_video_frame(), which already did this
+    correctly and doesn't depend on the missing modules at all).
+    """
+
+    def __init__(self, output_dir: Path, fps: float, resolution):
+        self.session_id  = datetime.now().strftime("rs_vid_%Y%m%d_%H%M%S")
+        self.session_dir = output_dir / self.session_id
+        self.fps         = fps
+        self.resolution  = resolution   # (width, height)
+        self.total_frames = 0
+        self._color_writer = None
+        self._depth_writer = None
+        self._start_time   = None
+
+    def start_recording(self, labels: dict = None) -> bool:
+        self.session_dir.mkdir(parents=True, exist_ok=True)
+        fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+        w, h   = self.resolution
+        self._color_writer = cv2.VideoWriter(
+            str(self.session_dir / "color.mp4"), fourcc, self.fps, (w, h))
+        self._depth_writer = cv2.VideoWriter(
+            str(self.session_dir / "depth_colormap.mp4"),
+            fourcc, self.fps, (w, h))
+
+        if not self._color_writer.isOpened() or not self._depth_writer.isOpened():
+            self._color_writer = None
+            self._depth_writer = None
+            return False
+
+        if labels:
+            with open(self.session_dir / "labels.json", "w") as f:
+                json.dump(labels, f, indent=2)
+
+        self._start_time = time.time()
+        return True
+
+    def write_frame(self, color: np.ndarray, depth_colormap: np.ndarray):
+        if self._color_writer is not None:
+            self._color_writer.write(color)
+        if self._depth_writer is not None:
+            self._depth_writer.write(depth_colormap)
+        self.total_frames += 1
+
+    def stop_recording(self) -> dict:
+        duration = (time.time() - self._start_time
+                    if self._start_time else 0.0)
+        if self._color_writer is not None:
+            self._color_writer.release()
+            self._color_writer = None
+        if self._depth_writer is not None:
+            self._depth_writer.release()
+            self._depth_writer = None
+        return {
+            "session_id":       self.session_id,
+            "total_frames":     self.total_frames,
+            "duration_seconds": duration,
+        }
+
+
+# ─────────────────────────────────────────────────────────────
 #  REALSENSE PANEL (PyQt5 widget)
 # ─────────────────────────────────────────────────────────────
 if QT_AVAILABLE:
@@ -503,9 +578,12 @@ if QT_AVAILABLE:
             self._click_y    = -1
             self._snapshot_count = 0
 
-            # ── Structured capture state (mirrors AcquisitionPanel) ──
-            self._session_acq    = None   # DataAcquisitionManager, reused
-            self._img_count      = 0
+            # ── Structured capture state (mirrors AcquisitionPanelRGB) ──
+            self._session_id       = None
+            self._session_labels   = None   # (subject, notes) key
+            self._session_dir_path = None
+            self._capture_count    = 0
+            self._img_count        = 0
 
             # ── Auto capture state ────────────────────────────────
             self._auto_timer = None
@@ -547,17 +625,7 @@ if QT_AVAILABLE:
             llay.setContentsMargins(0, 0, 4, 0)
             llay.setSpacing(6)
             llay.addWidget(self._info_grp())
-            if ACQUISITION_AVAILABLE:
-                llay.addWidget(self._capture_grp())
-            else:
-                warn = _muted(
-                    "⚠ core.acquisition_manager / core.video_recorder "
-                    "not found — capture/recording disabled")
-                theme_manager.register_widget(
-                    warn, lambda p: (
-                        f"color:{p['amber']};font-family:'Noto Sans',Arial,sans-serif;"
-                        f"font-size:9px;"))
-                llay.addWidget(warn)
+            llay.addWidget(self._capture_grp())
             llay.addStretch()
             splitter.addWidget(left_w)
 
@@ -827,83 +895,97 @@ if QT_AVAILABLE:
                 "source":  "realsense",
             }
 
-        # ── Structured capture session (mirrors AcquisitionPanel) ─
+        # ── Structured capture session (mirrors AcquisitionPanelRGB) ─
 
-        def _get_session_acq(self):
-            """Create (once) and reuse a DataAcquisitionManager for
-            this RealSense session — same pattern as the msCAM
-            AcquisitionPanel, so capture_count increments correctly
-            across repeated captures."""
-            if self._session_acq is not None:
-                return self._session_acq
-            try:
-                cfg = AcquisitionConfig()
-                cfg.camera = CameraConfig(
-                    model=self.camera.camera_model or "RealSense",
-                    bands=[BandConfig('depth', 1, (0, 0), 'COLORMAP_JET')]
-                )
-                cfg.storage.base_path = CAPTURE_BASE
-                cfg.storage.image_format = "jpg"
-                cfg.storage.save_raw = True
-                cfg.storage.save_bands = True
-                cfg.quality.enable_validation = False
-                acq = DataAcquisitionManager(config=cfg)
-                self._session_acq = acq
-                self._log(f"New capture session: {acq.session_id}")
-                return acq
-            except Exception as e:
-                self._log(f"Session init failed: {e}")
-                return None
+        def _get_session_dir(self, labels: dict) -> Path:
+            """
+            (Re)creates/returns the session directory for the current
+            labels -- same pattern as
+            gui/panels/acquisition_panel_rgb.py's _get_session_dir():
+            a genuinely new subject/notes combination starts a fresh
+            session (new capture_count sequence); reusing the same
+            labels continues the existing session and keeps counting
+            up. Self-contained -- no external acquisition-manager
+            dependency.
+            """
+            key = (labels.get("subject", ""), labels.get("notes", ""))
+            if (self._session_labels == key
+                    and self._session_dir_path is not None
+                    and self._session_dir_path.exists()):
+                return self._session_dir_path
+
+            ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+            session_id = f"rs_{ts}"
+            base = CAPTURE_BASE / session_id
+            for sub in ("color", "depth_colormap", "depth_raw", "metadata"):
+                (base / sub).mkdir(parents=True, exist_ok=True)
+
+            self._session_id       = session_id
+            self._session_labels   = key
+            self._session_dir_path = base
+            self._capture_count    = 0
+            self._log(f"New capture session: {session_id}")
+            return base
 
         def reset_session(self):
-            """Force a new acquisition session on next capture."""
-            self._session_acq = None
+            """Force a new capture session on next capture."""
+            self._session_labels   = None
+            self._session_dir_path = None
 
-        def _save_depth_raw_png(self, acq, capture_id: str,
-                                depth_raw: np.ndarray):
+        def _save_capture(self, frame, labels: dict) -> dict:
             """
-            Side-save full-precision 16-bit depth (mirrors how
-            AcquisitionPanel side-saves a pseudo-RGB alongside the
-            generic band save — cv2.imwrite supports 16-bit single
-            channel PNG, so nothing is lost here, unlike jpg/bands).
+            Save one capture (color + JET depth + full-precision 16-bit
+            raw depth + metadata) to the current session directory.
+            Self-contained replacement for the old
+            core.acquisition_manager.DataAcquisitionManager.acquire()
+            call -- same file layout, no external dependency.
+            cv2.imwrite supports 16-bit single-channel PNG directly,
+            so the raw depth save is fully lossless.
             """
-            try:
-                ddir = acq.config.storage.base_path / "depth_raw"
-                ddir.mkdir(parents=True, exist_ok=True)
-                cv2.imwrite(
-                    str(ddir / f"{capture_id}_depth16.png"), depth_raw)
-            except Exception as e:
-                self._log(f"Depth raw save error: {e}")
+            session_dir = self._get_session_dir(labels)
+            cid = f"{self._session_id}_{self._capture_count:04d}"
+            ts  = datetime.now().isoformat()
+
+            cv2.imwrite(str(session_dir / "color" / f"{cid}_color.jpg"),
+                        frame.color, [cv2.IMWRITE_JPEG_QUALITY, 95])
+            cv2.imwrite(str(session_dir / "depth_colormap" /
+                             f"{cid}_depth_cm.jpg"),
+                        frame.depth_colormap, [cv2.IMWRITE_JPEG_QUALITY, 95])
+            cv2.imwrite(str(session_dir / "depth_raw" / f"{cid}_depth16.png"),
+                        frame.depth_raw)
+
+            meta = {
+                "capture_id":   cid,
+                "timestamp":    ts,
+                "labels":       labels,
+                "camera_model": self.camera.camera_model or "RealSense",
+                "color_shape":  list(frame.color.shape),
+                "depth_shape":  list(frame.depth_raw.shape),
+            }
+            with open(session_dir / "metadata" / f"{cid}_meta.json", "w") as f:
+                json.dump(meta, f, indent=2)
+
+            self._capture_count += 1
+            return meta
 
         # ── Manual capture ────────────────────────────────────────
 
         def _capture_image(self):
-            frame = self.camera.get_frame()
+            frame  = self.camera.get_frame()
             labels = self._get_labels()
-            acq = self._get_session_acq()
-            if acq is None:
-                return
-            cam = {"model": self.camera.camera_model or "RealSense"}
-            ok, msg, meta = acq.acquire(
-                raw_image=frame.color,
-                bands_data={"depth": frame.depth_colormap},
-                camera_info=cam,
-                labels=labels)
-            if ok and meta:
-                self._save_depth_raw_png(
-                    acq, meta.capture_id, frame.depth_raw)
+            try:
+                meta = self._save_capture(frame, labels)
                 self._img_count += 1
                 self._lbl_img_count.setText(
                     f"Captures: {self._img_count}")
-            self._log(msg)
+                self._log(f"Captured: {meta['capture_id']}")
+            except Exception as e:
+                self._log(f"Capture error: {e}")
 
         # ── Auto capture ──────────────────────────────────────────
 
         def _auto_start(self):
             labels = self._get_labels()
-            acq = self._get_session_acq()
-            if acq is None:
-                return
             self._auto_count = 0
             self._auto_max   = self._spn_max_cap.value()
             interval_ms       = int(self._spn_interval.value() * 1000)
@@ -917,21 +999,15 @@ if QT_AVAILABLE:
                 frame = self.camera.get_frame()
                 lbl = labels.copy()
                 lbl["auto_n"] = self._auto_count
-                cam = {"model": self.camera.camera_model or "RealSense"}
-                ok, _, meta = acq.acquire(
-                    raw_image=frame.color,
-                    bands_data={"depth": frame.depth_colormap},
-                    camera_info=cam,
-                    labels=lbl)
-                if ok:
-                    if meta:
-                        self._save_depth_raw_png(
-                            acq, meta.capture_id, frame.depth_raw)
+                try:
+                    self._save_capture(frame, lbl)
                     self._auto_count += 1
                     pct = int(self._auto_count / self._auto_max * 100)
                     self._auto_progress.setValue(pct)
                     self._auto_progress.setFormat(
                         f"{self._auto_count}/{self._auto_max}")
+                except Exception as e:
+                    self._log(f"Auto capture error: {e}")
 
             self._auto_timer = QTimer()
             self._auto_timer.timeout.connect(_do_capture)
@@ -963,32 +1039,22 @@ if QT_AVAILABLE:
             self._auto_progress.setFormat("Ready")
 
         # ── Video recording ──────────────────────────────────────
-        # Reuses MultispectralVideoRecorder (same class the msCAM
-        # camera uses) — raw_is_color=True for RealSense's 3-channel
-        # color stream, and the 'depth' colormap entry routes the
-        # depth band through the same normalize+JET pipeline used
-        # for spectral bands. Raw 16-bit depth (which no standard
-        # video codec can hold) is additionally dumped as a per-frame
-        # PNG sequence alongside the video.
+        # Uses _SimpleDualStreamRecorder for the two standard 8-bit
+        # streams (color, JET depth). Raw 16-bit depth (which no
+        # standard video codec can hold) is separately dumped as a
+        # per-frame PNG sequence alongside the video -- unchanged from
+        # before, this part never depended on the missing modules.
 
         def _vid_start(self):
             frame = self.camera.get_frame()
             try:
                 fps = self._spn_vid_fps.value()
-                vcfg = VideoRecordingConfig(
-                    output_dir=VIDEO_BASE,
-                    fps=fps,
-                    record_raw=True,
-                    record_bands=True,
-                    raw_is_color=True,
-                )
-                self._video_rec = MultispectralVideoRecorder(vcfg)
                 h, w = frame.color.shape[:2]
                 labels = self._get_labels()
-                if self._video_rec.start_recording(
-                        resolution=(w, h), labels=labels):
-                    session_dir = (
-                        VIDEO_BASE / self._video_rec.session_id)
+                self._video_rec = _SimpleDualStreamRecorder(
+                    output_dir=VIDEO_BASE, fps=fps, resolution=(w, h))
+                if self._video_rec.start_recording(labels=labels):
+                    session_dir = self._video_rec.session_dir
                     self._depth_raw_dir = session_dir / "depth_raw"
                     self._depth_raw_dir.mkdir(
                         parents=True, exist_ok=True)
@@ -1011,6 +1077,10 @@ if QT_AVAILABLE:
                     self._log(
                         f"Video started: {self._video_rec.session_id} "
                         f"@ {fps:.0f}fps (color + JET depth + raw16 depth)")
+                else:
+                    self._log("Video error: VideoWriter failed to open "
+                               "(check codec availability / disk space)")
+                    self._video_rec = None
             except Exception as e:
                 self._log(f"Video error: {e}")
 
@@ -1019,8 +1089,7 @@ if QT_AVAILABLE:
                 return
             frame = self.camera.get_frame()
             self._video_rec.write_frame(
-                raw_frame=frame.color,
-                bands_data={"depth": frame.depth_raw})
+                color=frame.color, depth_colormap=frame.depth_colormap)
             try:
                 path = (self._depth_raw_dir /
                        f"frame_{self._depth_raw_idx:06d}.png")
@@ -1048,8 +1117,8 @@ if QT_AVAILABLE:
                         f"font-size:9px;"))
                 if meta:
                     self._log(
-                        f"Video saved: {meta.total_frames}fr "
-                        f"{meta.duration_seconds:.1f}s  "
+                        f"Video saved: {meta['total_frames']}fr "
+                        f"{meta['duration_seconds']:.1f}s  "
                         f"+ {self._depth_raw_idx} raw16 depth frames")
             except Exception as e:
                 self._log(f"Stop error: {e}")
