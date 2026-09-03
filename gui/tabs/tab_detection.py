@@ -345,6 +345,7 @@ class DetectionTab(QWidget):
                     f"color:{p['amber']};font-size:10px;"
                     f"font-family:'Noto Sans',Arial,sans-serif;"))
             self.nav.set_movement_controls_enabled(True)
+            self.camera.show_zone_overlay = True
             self.armed_changed.emit(True)
 
     def _on_stop(self):
@@ -360,12 +361,14 @@ class DetectionTab(QWidget):
                 f"color:{p['muted']};font-size:10px;"
                 f"font-family:'Noto Sans',Arial,sans-serif;"))
         self.nav.set_movement_controls_enabled(False)
+        self.camera.show_zone_overlay = False
         self.armed_changed.emit(False)
 
     def _on_estop(self):
         self.detect._det_estop()
         self.spray.emergency_stop()
         self.nav.set_movement_controls_enabled(False)
+        self.camera.show_zone_overlay = False
         self.armed_changed.emit(False)
         self.log.log("SYS", "E-STOP activated", "error")
 

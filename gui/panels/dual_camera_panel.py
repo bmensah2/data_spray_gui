@@ -172,6 +172,14 @@ class DualCameraPanel:
         # there's nothing to show since detection isn't running there.
         self.spray_event_source = None
 
+        # Zone/nozzle guide overlay (split lines, crosshairs, N1/N2/N3,
+        # A/B1/B2/C labels) is only meaningful once detection is armed
+        # -- before that, or on Data Collection tab, it's just clutter
+        # with nothing behind it. tab_detection.py's ARM/STOP/E-STOP
+        # handlers set this True/False; starts False since Data
+        # Collection is the default active tab at launch.
+        self.show_zone_overlay = False
+
         # Display refresh timer
         self._display_timer = QTimer()
         self._display_timer.timeout.connect(self._refresh_display)
@@ -360,82 +368,92 @@ class DualCameraPanel:
             r_disp = cv2.resize(right, (half_w, disp_h))
             h = disp_h   # use for all subsequent drawing
 
-            # ── Zone geometry from config (never hardcoded) ───
-            zones   = ZoneConfig()
-            scale   = half_w / 1920   # display scale factor
+            # ── Zone/nozzle guide overlay — only meaningful once
+            # detection is actually armed (before that, or on Data
+            # Collection tab, these lines/crosshairs are just clutter
+            # with nothing behind them). Gated by show_zone_overlay,
+            # set by tab_detection.py's ARM/STOP/E-STOP handlers.
+            if self.show_zone_overlay:
+                # ── Zone geometry from config (never hardcoded) ───
+                zones   = ZoneConfig()
+                scale   = half_w / 1920   # display scale factor
 
-            # Zone split lines (green)
-            b1_disp  = int(zones.B1_SPLIT_X * scale)
-            b2_disp  = int(zones.B2_SPLIT_X * scale)
-            cv2.line(l_disp, (b1_disp, 0), (b1_disp, h), (0, 255, 100), 1)
-            cv2.line(r_disp, (b2_disp, 0), (b2_disp, h), (0, 255, 100), 1)
+                # Zone split lines (green)
+                b1_disp  = int(zones.B1_SPLIT_X * scale)
+                b2_disp  = int(zones.B2_SPLIT_X * scale)
+                cv2.line(l_disp, (b1_disp, 0), (b1_disp, h), (0, 255, 100), 1)
+                cv2.line(r_disp, (b2_disp, 0), (b2_disp, h), (0, 255, 100), 1)
 
-            # ── Nozzle center crosshairs (cyan) ───────────────
-            # Derived from split values via ZoneConfig properties
-            n1_disp = int(zones.n1_center_cam1 * scale)
-            n2_cam1 = int(zones.n2_center_cam1 * scale)
-            n2_cam2 = int(zones.n2_center_cam2 * scale)
-            n3_disp = int(zones.n3_center_cam2 * scale)
+                # ── Nozzle center crosshairs (cyan) ───────────────
+                # Derived from split values via ZoneConfig properties
+                n1_disp = int(zones.n1_center_cam1 * scale)
+                n2_cam1 = int(zones.n2_center_cam1 * scale)
+                n2_cam2 = int(zones.n2_center_cam2 * scale)
+                n3_disp = int(zones.n3_center_cam2 * scale)
 
-            cross_col  = (255, 220, 0)   # cyan-yellow crosshair
-            cross_h    = 20              # half-height of crosshair tick
-            cross_w    = 10              # half-width of crosshair tick
+                cross_col  = (255, 220, 0)   # cyan-yellow crosshair
+                cross_h    = 20              # half-height of crosshair tick
+                cross_w    = 10              # half-width of crosshair tick
 
-            for disp_img, cx_list in [
-                (l_disp, [n1_disp, n2_cam1]),
-                (r_disp, [n2_cam2, n3_disp]),
-            ]:
-                for cx in cx_list:
-                    # Vertical bar
-                    cv2.line(disp_img, (cx, 0), (cx, h),
-                             cross_col, 1)
-                    # Horizontal tick at centre
-                    cy = h // 2
-                    cv2.line(disp_img,
-                             (cx - cross_w, cy), (cx + cross_w, cy),
-                             cross_col, 1)
-                    cv2.line(disp_img,
-                             (cx, cy - cross_h), (cx, cy + cross_h),
-                             cross_col, 1)
+                for disp_img, cx_list in [
+                    (l_disp, [n1_disp, n2_cam1]),
+                    (r_disp, [n2_cam2, n3_disp]),
+                ]:
+                    for cx in cx_list:
+                        # Vertical bar
+                        cv2.line(disp_img, (cx, 0), (cx, h),
+                                 cross_col, 1)
+                        # Horizontal tick at centre
+                        cy = h // 2
+                        cv2.line(disp_img,
+                                 (cx - cross_w, cy), (cx + cross_w, cy),
+                                 cross_col, 1)
+                        cv2.line(disp_img,
+                                 (cx, cy - cross_h), (cx, cy + cross_h),
+                                 cross_col, 1)
 
-            # ── Nozzle labels ─────────────────────────────────
-            FONT_SIZE = 13
+                # ── Nozzle labels ─────────────────────────────────
+                FONT_SIZE = 13
 
-            for disp_img, labels in [
-                (l_disp, [(n1_disp, "N1"), (n2_cam1, "N2")]),
-                (r_disp, [(n2_cam2, "N2"), (n3_disp, "N3")]),
-            ]:
-                for cx, lbl in labels:
-                    tw, th = text_size(lbl, FONT_SIZE)
-                    tx = max(2, cx - tw // 2)
-                    ty = (h // 2 - 28) - th
-                    put_text(disp_img, lbl, (tx, ty),
-                             font_size=FONT_SIZE, color_bgr=cross_col)
+                for disp_img, labels in [
+                    (l_disp, [(n1_disp, "N1"), (n2_cam1, "N2")]),
+                    (r_disp, [(n2_cam2, "N2"), (n3_disp, "N3")]),
+                ]:
+                    for cx, lbl in labels:
+                        tw, th = text_size(lbl, FONT_SIZE)
+                        tx = max(2, cx - tw // 2)
+                        ty = (h // 2 - 28) - th
+                        put_text(disp_img, lbl, (tx, ty),
+                                 font_size=FONT_SIZE, color_bgr=cross_col)
 
-            # ── Zone labels (bottom strip) ────────────────────
-            zone_col   = (180, 255, 180)
-            for disp_img, zone_labels in [
-                (l_disp, [(n1_disp, "A"), (n2_cam1, "B1")]),
-                (r_disp, [(n2_cam2, "B2"), (n3_disp, "C")]),
-            ]:
-                for cx, zlbl in zone_labels:
-                    tw, th = text_size(zlbl, FONT_SIZE)
-                    put_text(disp_img, zlbl,
-                             (max(2, cx - tw // 2), h - 10 - th),
-                             font_size=FONT_SIZE, color_bgr=zone_col)
+                # ── Zone labels (bottom strip) ────────────────────
+                zone_col   = (180, 255, 180)
+                for disp_img, zone_labels in [
+                    (l_disp, [(n1_disp, "A"), (n2_cam1, "B1")]),
+                    (r_disp, [(n2_cam2, "B2"), (n3_disp, "C")]),
+                ]:
+                    for cx, zlbl in zone_labels:
+                        tw, th = text_size(zlbl, FONT_SIZE)
+                        put_text(disp_img, zlbl,
+                                 (max(2, cx - tw // 2), h - 10 - th),
+                                 font_size=FONT_SIZE, color_bgr=zone_col)
 
             # ── Camera labels ─────────────────────────────────
+            # (always shown — basic camera identification, useful
+            # regardless of detection/armed state)
+            LABEL_FONT_SIZE = 13
             put_text(l_disp, "LEFT",  (6, 4),
-                     font_size=FONT_SIZE, color_bgr=(0, 220, 80))
+                     font_size=LABEL_FONT_SIZE, color_bgr=(0, 220, 80))
             put_text(r_disp, "RIGHT", (6, 4),
-                     font_size=FONT_SIZE, color_bgr=(0, 220, 80))
+                     font_size=LABEL_FONT_SIZE, color_bgr=(0, 220, 80))
 
-            # Sync error warning
+            # Sync error warning (always shown — a camera health
+            # diagnostic, not a detection/zone concept)
             if not pair.sync_ok:
                 put_text(l_disp,
                           f"SYNC {pair.sync_error_ms:.0f}ms",
                           (10, 42),
-                          font_size=FONT_SIZE, color_bgr=(0, 100, 255))
+                          font_size=LABEL_FONT_SIZE, color_bgr=(0, 100, 255))
 
             # Centre divider
             divider = np.zeros((h, 4, 3), dtype=np.uint8)
@@ -505,10 +523,16 @@ class DualCameraPanel:
 
     # ── Widgets ───────────────────────────────────────────────
 
-    def camera_control_bar(self) -> QWidget:
+    def camera_control_bar(self, fullscreen_dialog=None) -> QWidget:
         """
         Returns the camera toolbar widget (connect / start / stop).
         Mirrors CameraPanel.camera_control_bar().
+
+        fullscreen_dialog: pass the QDialog this bar is being embedded
+        INSIDE (only from open_fullscreen_view() itself) so the
+        Fullscreen button becomes a Restore button that closes that
+        specific dialog, instead of opening ANOTHER nested fullscreen
+        dialog on top of the current one.
         """
         bar = QWidget()
         bar.setFixedHeight(44)
@@ -555,8 +579,13 @@ class DualCameraPanel:
         lay.addWidget(disp_combo)
         self._disp_mode_combos.append(disp_combo)
 
-        # Fullscreen popout
-        fs_btn = QPushButton("⛶ Fullscreen")
+        # Fullscreen popout / Restore
+        if fullscreen_dialog is not None:
+            fs_btn = QPushButton("🗗 Restore")
+            fs_btn.clicked.connect(fullscreen_dialog.close)
+        else:
+            fs_btn = QPushButton("⛶ Fullscreen")
+            fs_btn.clicked.connect(lambda: self.open_fullscreen_view(bar.window()))
         theme_manager.register_widget(
             fs_btn, lambda p: (
                 f"QPushButton{{background:{p['input_bg']};color:{p['text']};"
@@ -565,7 +594,6 @@ class DualCameraPanel:
                 f"font-size:9px;}}"
                 f"QPushButton:hover{{background:{p['btn_hover']};}}"))
         fs_btn.setFixedHeight(28)
-        fs_btn.clicked.connect(lambda: self.open_fullscreen_view(bar.window()))
         lay.addWidget(fs_btn)
 
         lay.addStretch()
@@ -684,7 +712,7 @@ class DualCameraPanel:
         # Full control bar — connect/stop/view/fullscreen, same as the
         # embedded one, kept in sync automatically like every other
         # tracked control-bar instance.
-        lay.addWidget(self.camera_control_bar())
+        lay.addWidget(self.camera_control_bar(fullscreen_dialog=dlg))
 
         body = QHBoxLayout()
         body.setContentsMargins(0, 0, 0, 0)
