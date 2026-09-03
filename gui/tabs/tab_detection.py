@@ -86,6 +86,15 @@ class DetectionTab(QWidget):
             gantry_ctrl_ref=lambda: gantry.ctrl
         )
 
+        # Let the shared camera's fullscreen popout show a live
+        # spray-event mini-feed (see DualCameraPanel.open_fullscreen_view()).
+        # Harmless that self.camera is the SAME shared instance used by
+        # Data Collection tab too -- events only ever occur while
+        # Detection is armed regardless of which tab's fullscreen view
+        # is open, so this is a reasonable bonus there too, not a leak
+        # of Detection-only state into an unrelated tab.
+        self.camera.spray_event_source = self.detect
+
         # Wire detection ros_bridge → nav odom display
         # Updated when detection arms
         self._wire_ros_bridge()

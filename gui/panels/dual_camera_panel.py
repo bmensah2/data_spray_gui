@@ -34,7 +34,7 @@ import numpy as np
 
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout,
-    QLabel, QPushButton, QSizePolicy, QComboBox, QDialog
+    QLabel, QPushButton, QSizePolicy, QComboBox, QDialog, QListWidget
 )
 from PyQt5.QtCore import Qt, QTimer
 from PyQt5.QtGui import QImage, QPixmap
@@ -64,6 +64,60 @@ DISPLAY_MODES = [
     "Green Channel",
     "Blue Channel",
 ]
+
+
+# ─────────────────────────────────────────────────────────────
+#  FULLSCREEN CAMERA DIALOG
+# ─────────────────────────────────────────────────────────────
+
+class _FullscreenCameraDialog(QDialog):
+    """
+    Fullscreen popout for the live camera feed (see
+    DualCameraPanel.open_fullscreen_view()).
+
+    Defined as a REAL QDialog subclass with keyPressEvent/closeEvent
+    as genuine class methods -- not assigned as instance-level
+    function attributes. Overriding a Qt virtual event handler by
+    setting `dlg.keyPressEvent = some_function` is a known PyQt5
+    pitfall: SIP's C++-to-Python virtual dispatch ("catcher") doesn't
+    reliably recognize an instance-attribute override the way it does
+    a genuine subclass method override, and can raise
+    `TypeError: invalid argument to sipBadCatcherResult()` at runtime.
+    A real subclass avoids that entirely.
+    """
+
+    def __init__(self, camera_panel, parent=None):
+        super().__init__(parent)
+        self._camera_panel = camera_panel
+        self._display_widget = None
+        self._events_list = None
+        self._spray_connection = None  # (signal, slot) to disconnect on close
+
+    def register_cleanup(self, display_widget, events_list=None,
+                          spray_connection=None):
+        """Record what needs unregistering/disconnecting when this
+        dialog closes. Called once by open_fullscreen_view() right
+        after building the dialog's contents.
+        spray_connection, if given, is (signal, slot) to disconnect."""
+        self._display_widget = display_widget
+        self._events_list = events_list
+        self._spray_connection = spray_connection
+
+    def keyPressEvent(self, event):
+        if event.key() == Qt.Key_Escape:
+            self.close()
+        else:
+            super().keyPressEvent(event)
+
+    def closeEvent(self, event):
+        self._camera_panel._cleanup_fullscreen_widgets(self)
+        if self._spray_connection is not None:
+            signal, slot = self._spray_connection
+            try:
+                signal.disconnect(slot)
+            except Exception:
+                pass   # already disconnected, or source object gone
+        event.accept()
 
 
 # ─────────────────────────────────────────────────────────────
@@ -110,6 +164,13 @@ class DualCameraPanel:
         self._start_btns:      list = []   # all start/stop buttons
         self._status_lbls:     list = []   # all status labels
         self._disp_mode_combos: list = []  # all display mode combos
+
+        # Optional: set by whichever tab has a live detection panel
+        # (tab_detection.py sets this to its DetectionPanelRGB instance
+        # after construction) so the fullscreen popout can show a live
+        # spray-event mini-feed. None on Data Collection tab, where
+        # there's nothing to show since detection isn't running there.
+        self.spray_event_source = None
 
         # Display refresh timer
         self._display_timer = QTimer()
@@ -550,30 +611,56 @@ class DualCameraPanel:
     def remove_display_widget(self, container: QWidget):
         """
         Unregister a display widget (from display_widget()) so it
-        stops receiving frame updates. Call this when a popup/
-        fullscreen view showing it is closed -- otherwise
-        _display_lbls quietly accumulates a dead entry every time one
-        is opened and closed (harmless on its own, since _show()
-        already guards against a destroyed widget with a RuntimeError
-        catch, but wasteful over a long session with repeated open/
-        close of the fullscreen view).
+        stops receiving frame updates. Superseded for the fullscreen
+        popout by _cleanup_fullscreen_widgets() below (which also
+        prunes control-bar widgets, not just the display label), kept
+        as a standalone method for any other caller that only ever
+        added a bare display_widget().
         """
         lbl = container.findChild(QLabel)
         if lbl is not None and lbl in self._display_lbls:
             self._display_lbls.remove(lbl)
 
+    def _cleanup_fullscreen_widgets(self, dlg: QWidget):
+        """
+        Remove every widget created for a now-closing fullscreen
+        dialog from every tracking list (display labels, connect/
+        start buttons, status labels, view-mode combos), so they stop
+        receiving frame/state updates and don't accumulate as dead
+        references over repeated open/close of the fullscreen view.
+        Uses widget-tree ancestry rather than tracking "which list did
+        this widget go into" individually, so it stays correct if the
+        fullscreen dialog's contents ever change.
+        """
+        for lst in (self._display_lbls, self._connect_btns,
+                    self._start_btns, self._status_lbls,
+                    self._disp_mode_combos):
+            for w in list(lst):
+                try:
+                    is_descendant = dlg.isAncestorOf(w)
+                except RuntimeError:
+                    is_descendant = True   # widget already destroyed by Qt
+                if is_descendant:
+                    lst.remove(w)
+
     def open_fullscreen_view(self, parent=None) -> QDialog:
         """
-        Open the live camera feed in a fullscreen popup window.
+        Open the live camera feed in a fullscreen popup window, with
+        its own connect/stop/view controls and (if this panel's
+        spray_event_source is set -- see tab_detection.py) a live
+        spray-event mini-feed, so an operator doesn't need to exit
+        fullscreen to control the camera or lose track of what's
+        being sprayed.
 
         Uses the same multi-display-widget mechanism display_widget()
         already provides for embedding the feed in more than one tab
         at once: the popup gets its OWN QLabel via a fresh
-        display_widget() call, which is automatically kept in sync
-        with live frames in parallel with whatever's already embedded
-        in the tab -- no extra frame-routing logic needed here.
+        display_widget() call (and its own control-bar widgets via a
+        fresh camera_control_bar() call), automatically kept in sync
+        with live frames/state in parallel with whatever's already
+        embedded in the tab -- no extra routing logic needed here.
         """
-        dlg = QDialog(parent)
+        dlg = _FullscreenCameraDialog(self, parent)
         dlg.setWindowTitle("Live Camera Feed — Fullscreen")
         theme_manager.register_widget(
             dlg, lambda p: f"background-color:{p['bg0']};")
@@ -581,30 +668,68 @@ class DualCameraPanel:
         lay.setContentsMargins(0, 0, 0, 0)
         lay.setSpacing(0)
 
-        hint = QLabel("Press Esc or click here to exit fullscreen")
-        hint.setAlignment(Qt.AlignCenter)
-        hint.setFixedHeight(24)
+        hint = QPushButton("Press Esc or click here to exit fullscreen")
+        hint.setFlat(True)
+        hint.setFixedHeight(22)
         hint.setCursor(Qt.PointingHandCursor)
         theme_manager.register_widget(
             hint, lambda p: (
-                f"background-color:{p['bg2']};color:{p['muted']};"
-                f"font-family:'Noto Sans',Arial,sans-serif;font-size:10px;"))
-        hint.mousePressEvent = lambda ev: dlg.close()
+                f"QPushButton{{background-color:{p['bg2']};"
+                f"color:{p['muted']};border:none;"
+                f"font-family:'Noto Sans',Arial,sans-serif;font-size:10px;}}"
+                f"QPushButton:hover{{color:{p['text']};}}"))
+        hint.clicked.connect(dlg.close)
         lay.addWidget(hint)
 
+        # Full control bar — connect/stop/view/fullscreen, same as the
+        # embedded one, kept in sync automatically like every other
+        # tracked control-bar instance.
+        lay.addWidget(self.camera_control_bar())
+
+        body = QHBoxLayout()
+        body.setContentsMargins(0, 0, 0, 0)
+
         display = self.display_widget()
-        lay.addWidget(display, stretch=1)
+        body.addWidget(display, stretch=1)
 
-        def _key_press(event):
-            if event.key() == Qt.Key_Escape:
-                dlg.close()
-        dlg.keyPressEvent = _key_press
+        # Optional live spray-event mini-feed
+        events_list = None
+        if self.spray_event_source is not None:
+            events_list = QListWidget()
+            events_list.setFixedWidth(260)
+            theme_manager.register_widget(
+                events_list, lambda p: (
+                    f"QListWidget{{background-color:{p['bg0']};"
+                    f"color:{p['text_dim']};border:none;"
+                    f"border-left:1px solid {p['border2']};"
+                    f"font-family:'Noto Sans',Arial,sans-serif;"
+                    f"font-size:10px;}}"))
 
-        def _on_close(event):
-            self.remove_display_widget(display)
-            event.accept()
-        dlg.closeEvent = _on_close
+            def _on_spray_event(event, lw=events_list):
+                try:
+                    ts = time.strftime("%H:%M:%S")
+                    names = ", ".join(
+                        d.get("class_name", "?") for d in event.detections)
+                    conf = max(
+                        (d.get("confidence", 0.0) for d in event.detections),
+                        default=0.0)
+                    lw.insertItem(
+                        0, f"{ts}  {event.zone_name}  {names} {conf:.2f}")
+                    while lw.count() > 50:
+                        lw.takeItem(lw.count() - 1)
+                except RuntimeError:
+                    pass   # dialog/list already destroyed
 
+            self.spray_event_source.spray_event_signal.connect(_on_spray_event)
+            spray_connection = (
+                self.spray_event_source.spray_event_signal, _on_spray_event)
+            body.addWidget(events_list)
+        else:
+            spray_connection = None
+
+        lay.addLayout(body, stretch=1)
+
+        dlg.register_cleanup(display, events_list, spray_connection)
         dlg.showFullScreen()
         return dlg
 
