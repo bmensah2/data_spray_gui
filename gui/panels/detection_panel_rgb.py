@@ -195,6 +195,12 @@ class DetectionPanelRGB(QWidget):
     # Emitted with the session_id whenever a new detection session
     # starts (ARM), so listeners can reset any per-session UI state.
     session_started = pyqtSignal(str)
+    # Emitted every frame with {mode, fps, inference_ms, detections,
+    # events} -- the same values shown in this tab's own Statistics
+    # group box, also consumed by DualCameraPanel's fullscreen popout
+    # to render a live status table below the camera view instead of
+    # baking this text into the video frame itself.
+    stats_updated = pyqtSignal(dict)
 
     def __init__(self, shared_log: UnifiedLog,
                  camera,
@@ -973,6 +979,17 @@ class DetectionPanelRGB(QWidget):
                 f"Inference: {dual_result.total_ms:.1f}ms")
             self.lbl_events.setText(
                 f"Spray events: {self._events}")
+
+            mode = (self._cfg.session.detection_mode.value.upper()
+                    if self._cfg else "DET")
+            stub = self._engine is not None and self._engine.stub_mode
+            self.stats_updated.emit({
+                "mode":          mode + (" STUB" if stub else ""),
+                "fps":           self._fps,
+                "inference_ms":  dual_result.total_ms,
+                "detections":    dual_result.total_detections,
+                "events":        self._events,
+            })
             if pose:
                 self.lbl_pose.setText(
                     f"pos({pose['x']:.2f},{pose['y']:.2f}) "
@@ -1100,15 +1117,13 @@ class DetectionPanelRGB(QWidget):
         for det in dual_result.right.detections:
             _draw_detection(det, x_offset=off)
 
-        # ── HUD (top-left status line) ────────────────────────
-        mode = (self._cfg.session.detection_mode.value.upper()
-                if self._cfg else "DET")
-        stub = " STUB" if (self._engine and self._engine.stub_mode) else ""
-        hud  = (f"{mode}{stub}  FPS:{self._fps:.0f}"
-                f"  Det:{dual_result.total_detections}"
-                f"  Ev:{self._events}")
-        put_text(out, hud, (4, 3), font_size=FONT_SIZE,
-                 color_bgr=(180, 210, 255), bg_color_bgr=(10, 10, 10), pad=3)
+        # NOTE: the status HUD (mode/FPS/detections/events) used to be
+        # baked into the frame here via put_text(). Moved to a proper
+        # Qt table instead (see stats_updated signal, emitted from
+        # _run_inference() below) -- a real widget renders more clearly
+        # than more overlay text burned into the video, and this same
+        # info was already duplicated in the Statistics group box on
+        # this tab's own layout anyway.
         return out
 
     # ── Callbacks ─────────────────────────────────────────────

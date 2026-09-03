@@ -91,3 +91,47 @@ def insert_spray_event_row(table: QTableWidget, event,
 
     while table.rowCount() > max_rows:
         table.removeRow(table.rowCount() - 1)
+
+
+def build_stats_table(columns) -> QTableWidget:
+    """
+    Build a single-row status table (Mode/FPS/Detections/Events, etc.)
+    with the same visual styling as build_spray_event_table(), for
+    live status info that used to be baked as overlay text onto the
+    video frame -- a real widget renders more clearly and consistently
+    with the rest of the UI than more burned-in frame text.
+    """
+    table = QTableWidget(1, len(columns))
+    table.setHorizontalHeaderLabels(columns)
+    table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+    table.verticalHeader().setVisible(False)
+    table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+    table.setSelectionMode(QAbstractItemView.NoSelection)
+    table.setMaximumHeight(56)
+    theme_manager.register_widget(
+        table, lambda p: (
+            f"QTableWidget{{background-color:{p['bg0']};color:{p['text']};"
+            f"font-family:'Noto Sans',Arial,sans-serif;font-size:11px;"
+            f"font-weight:bold;gridline-color:{p['border2']};"
+            f"border:1px solid {p['border2']};}}"
+            f"QHeaderView::section{{background-color:{p['bg3']};"
+            f"color:{p['muted']};padding:4px;border:1px solid {p['border2']};"
+            f"font-weight:bold;font-size:10px;}}"
+        ))
+    for col in range(len(columns)):
+        item = QTableWidgetItem("--")
+        item.setTextAlignment(Qt.AlignCenter)
+        table.setItem(0, col, item)
+    return table
+
+
+def update_stats_row(table: QTableWidget, values):
+    """Update the single-row status table's cell values in place.
+    `values` is a list of strings, one per column, in column order."""
+    for col, text in enumerate(values):
+        item = table.item(0, col)
+        if item is None:
+            item = QTableWidgetItem()
+            item.setTextAlignment(Qt.AlignCenter)
+            table.setItem(0, col, item)
+        item.setText(str(text))

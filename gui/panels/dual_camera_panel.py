@@ -43,14 +43,15 @@ from gui.style import _muted, _sec
 from gui.theme_manager import theme_manager
 from gui.shared_log import UnifiedLog
 from gui.frame_text import put_text, text_size
-from gui.spray_event_table import build_spray_event_table, insert_spray_event_row
+from gui.spray_event_table import (
+    build_spray_event_table, insert_spray_event_row,
+    build_stats_table, update_stats_row,
+)
 
 try:
     from core.dual_emeet_camera import DualEMEETCamera, FramePair
-    from core.detection_config_rgb import ZoneConfig
 except ImportError:
     from core.dual_emeet_camera import DualEMEETCamera, FramePair
-    from core.detection_config_rgb import ZoneConfig
 
 
 # ─────────────────────────────────────────────────────────────
@@ -91,18 +92,20 @@ class _FullscreenCameraDialog(QDialog):
         super().__init__(parent)
         self._camera_panel = camera_panel
         self._display_widget = None
-        self._events_list = None
-        self._spray_connection = None  # (signal, slot) to disconnect on close
+        self._extra_widgets = []
+        self._connections = []   # list of (signal, slot) to disconnect on close
 
-    def register_cleanup(self, display_widget, events_list=None,
-                          spray_connection=None):
+    def register_cleanup(self, display_widget, extra_widgets=None,
+                          connections=None):
         """Record what needs unregistering/disconnecting when this
         dialog closes. Called once by open_fullscreen_view() right
         after building the dialog's contents.
-        spray_connection, if given, is (signal, slot) to disconnect."""
+        connections, if given, is a list of (signal, slot) pairs to
+        disconnect -- one per live-updating table (stats, spray
+        events) subscribed to a DetectionPanelRGB signal."""
         self._display_widget = display_widget
-        self._events_list = events_list
-        self._spray_connection = spray_connection
+        self._extra_widgets = extra_widgets or []
+        self._connections = connections or []
 
     def keyPressEvent(self, event):
         if event.key() == Qt.Key_Escape:
@@ -112,8 +115,7 @@ class _FullscreenCameraDialog(QDialog):
 
     def closeEvent(self, event):
         self._camera_panel._cleanup_fullscreen_widgets(self)
-        if self._spray_connection is not None:
-            signal, slot = self._spray_connection
+        for signal, slot in self._connections:
             try:
                 signal.disconnect(slot)
             except Exception:
@@ -172,14 +174,6 @@ class DualCameraPanel:
         # spray-event mini-feed. None on Data Collection tab, where
         # there's nothing to show since detection isn't running there.
         self.spray_event_source = None
-
-        # Zone/nozzle guide overlay (split lines, crosshairs, N1/N2/N3,
-        # A/B1/B2/C labels) is only meaningful once detection is armed
-        # -- before that, or on Data Collection tab, it's just clutter
-        # with nothing behind it. tab_detection.py's ARM/STOP/E-STOP
-        # handlers set this True/False; starts False since Data
-        # Collection is the default active tab at launch.
-        self.show_zone_overlay = False
 
         # Display refresh timer
         self._display_timer = QTimer()
@@ -369,75 +363,21 @@ class DualCameraPanel:
             r_disp = cv2.resize(right, (half_w, disp_h))
             h = disp_h   # use for all subsequent drawing
 
-            # ── Zone/nozzle guide overlay — only meaningful once
-            # detection is actually armed (before that, or on Data
-            # Collection tab, these lines/crosshairs are just clutter
-            # with nothing behind them). Gated by show_zone_overlay,
-            # set by tab_detection.py's ARM/STOP/E-STOP handlers.
-            if self.show_zone_overlay:
-                # ── Zone geometry from config (never hardcoded) ───
-                zones   = ZoneConfig()
-                scale   = half_w / 1920   # display scale factor
-
-                # Zone split lines (green)
-                b1_disp  = int(zones.B1_SPLIT_X * scale)
-                b2_disp  = int(zones.B2_SPLIT_X * scale)
-                cv2.line(l_disp, (b1_disp, 0), (b1_disp, h), (0, 255, 100), 1)
-                cv2.line(r_disp, (b2_disp, 0), (b2_disp, h), (0, 255, 100), 1)
-
-                # ── Nozzle center crosshairs (cyan) ───────────────
-                # Derived from split values via ZoneConfig properties
-                n1_disp = int(zones.n1_center_cam1 * scale)
-                n2_cam1 = int(zones.n2_center_cam1 * scale)
-                n2_cam2 = int(zones.n2_center_cam2 * scale)
-                n3_disp = int(zones.n3_center_cam2 * scale)
-
-                cross_col  = (255, 220, 0)   # cyan-yellow crosshair
-                cross_h    = 20              # half-height of crosshair tick
-                cross_w    = 10              # half-width of crosshair tick
-
-                for disp_img, cx_list in [
-                    (l_disp, [n1_disp, n2_cam1]),
-                    (r_disp, [n2_cam2, n3_disp]),
-                ]:
-                    for cx in cx_list:
-                        # Vertical bar
-                        cv2.line(disp_img, (cx, 0), (cx, h),
-                                 cross_col, 1)
-                        # Horizontal tick at centre
-                        cy = h // 2
-                        cv2.line(disp_img,
-                                 (cx - cross_w, cy), (cx + cross_w, cy),
-                                 cross_col, 1)
-                        cv2.line(disp_img,
-                                 (cx, cy - cross_h), (cx, cy + cross_h),
-                                 cross_col, 1)
-
-                # ── Nozzle labels ─────────────────────────────────
-                FONT_SIZE = 13
-
-                for disp_img, labels in [
-                    (l_disp, [(n1_disp, "N1"), (n2_cam1, "N2")]),
-                    (r_disp, [(n2_cam2, "N2"), (n3_disp, "N3")]),
-                ]:
-                    for cx, lbl in labels:
-                        tw, th = text_size(lbl, FONT_SIZE)
-                        tx = max(2, cx - tw // 2)
-                        ty = (h // 2 - 28) - th
-                        put_text(disp_img, lbl, (tx, ty),
-                                 font_size=FONT_SIZE, color_bgr=cross_col)
-
-                # ── Zone labels (bottom strip) ────────────────────
-                zone_col   = (180, 255, 180)
-                for disp_img, zone_labels in [
-                    (l_disp, [(n1_disp, "A"), (n2_cam1, "B1")]),
-                    (r_disp, [(n2_cam2, "B2"), (n3_disp, "C")]),
-                ]:
-                    for cx, zlbl in zone_labels:
-                        tw, th = text_size(zlbl, FONT_SIZE)
-                        put_text(disp_img, zlbl,
-                                 (max(2, cx - tw // 2), h - 10 - th),
-                                 font_size=FONT_SIZE, color_bgr=zone_col)
+            # NOTE: zone-line/nozzle-crosshair/N1-N3/A-B1-B2-C drawing
+            # deliberately does NOT happen here. DetectionPanelRGB's
+            # own _draw_overlay() (wired via on_detection_overlay,
+            # below) already draws a strictly richer version of the
+            # exact same information -- active-zone highlighting, real
+            # detection boxes, HUD -- whenever detection is armed. An
+            # earlier version of this code drew a second, more basic
+            # copy of the same zone/nozzle guides gated on a separate
+            # show_zone_overlay flag that also happened to be True
+            # exactly whenever on_detection_overlay was active,
+            # producing two overlapping, slightly-offset copies of the
+            # same lines and labels on screen at once. There's no
+            # remaining scenario where drawing it here adds anything:
+            # not armed means nothing should show at all, and armed
+            # means on_detection_overlay's version already covers it.
 
             # ── Camera labels ─────────────────────────────────
             # (always shown — basic camera identification, useful
@@ -722,10 +662,43 @@ class DualCameraPanel:
         display = self.display_widget()
         body.addWidget(display, stretch=3)
 
-        # Optional live spray-event feed — same table format as
-        # Session Analysis's "Live Spray Event Feed" (Time, Zone,
-        # Nozzle, Class, Conf, Pose, GPS), via the shared
-        # gui/spray_event_table module so both stay in sync.
+        connections = []   # (signal, slot) pairs to disconnect on close
+
+        # Live status table (mode/FPS/inference/detections/events) --
+        # replaces the HUD text that used to be baked into the video
+        # frame itself (see DetectionPanelRGB._draw_overlay()).
+        stats_table = None
+        if self.spray_event_source is not None:
+            stats_grp = QWidget()
+            sg_lay = QVBoxLayout(stats_grp)
+            sg_lay.setContentsMargins(4, 4, 4, 0)
+            sg_lay.addWidget(_muted("Status"))
+
+            stats_table = build_stats_table(
+                ["Mode", "FPS", "Inference", "Detections", "Events"])
+            sg_lay.addWidget(stats_table)
+            body.addWidget(stats_grp)
+
+            def _on_stats(stats, tbl=stats_table):
+                try:
+                    update_stats_row(tbl, [
+                        stats.get("mode", "--"),
+                        f"{stats.get('fps', 0):.1f}",
+                        f"{stats.get('inference_ms', 0):.1f}ms",
+                        stats.get("detections", 0),
+                        stats.get("events", 0),
+                    ])
+                except RuntimeError:
+                    pass   # dialog/table already destroyed
+
+            self.spray_event_source.stats_updated.connect(_on_stats)
+            connections.append(
+                (self.spray_event_source.stats_updated, _on_stats))
+
+        # Live spray-event feed — same table format as Session
+        # Analysis's "Live Spray Event Feed" (Time, Zone, Nozzle,
+        # Class, Conf, Pose, GPS), via the shared gui/spray_event_table
+        # module so both stay in sync.
         events_table = None
         if self.spray_event_source is not None:
             events_grp = QWidget()
@@ -745,15 +718,13 @@ class DualCameraPanel:
                     pass   # dialog/table already destroyed
 
             self.spray_event_source.spray_event_signal.connect(_on_spray_event)
-            spray_connection = (
-                self.spray_event_source.spray_event_signal, _on_spray_event)
+            connections.append(
+                (self.spray_event_source.spray_event_signal, _on_spray_event))
             body.addWidget(events_grp, stretch=1)
-        else:
-            spray_connection = None
 
         lay.addLayout(body, stretch=1)
 
-        dlg.register_cleanup(display, events_table, spray_connection)
+        dlg.register_cleanup(display, [stats_table, events_table], connections)
         dlg.showFullScreen()
         return dlg
 
