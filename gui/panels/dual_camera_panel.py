@@ -34,7 +34,7 @@ import numpy as np
 
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout,
-    QLabel, QPushButton, QSizePolicy, QComboBox
+    QLabel, QPushButton, QSizePolicy, QComboBox, QDialog
 )
 from PyQt5.QtCore import Qt, QTimer
 from PyQt5.QtGui import QImage, QPixmap
@@ -42,6 +42,7 @@ from PyQt5.QtGui import QImage, QPixmap
 from gui.style import _muted, _sec
 from gui.theme_manager import theme_manager
 from gui.shared_log import UnifiedLog
+from gui.frame_text import put_text, text_size
 
 try:
     from core.dual_emeet_camera import DualEMEETCamera, FramePair
@@ -337,46 +338,43 @@ class DualCameraPanel:
                              cross_col, 1)
 
             # ── Nozzle labels ─────────────────────────────────
-            font    = cv2.FONT_HERSHEY_DUPLEX
-            fscale  = 0.32
-            fthick  = 1
-            lbl_y   = h // 2 - 28
+            FONT_SIZE = 13
 
             for disp_img, labels in [
                 (l_disp, [(n1_disp, "N1"), (n2_cam1, "N2")]),
                 (r_disp, [(n2_cam2, "N2"), (n3_disp, "N3")]),
             ]:
                 for cx, lbl in labels:
-                    tw = cv2.getTextSize(lbl, font, fscale, fthick)[0][0]
+                    tw, th = text_size(lbl, FONT_SIZE)
                     tx = max(2, cx - tw // 2)
-                    cv2.putText(disp_img, lbl, (tx, lbl_y),
-                                font, fscale, cross_col, fthick)
+                    ty = (h // 2 - 28) - th
+                    put_text(disp_img, lbl, (tx, ty),
+                             font_size=FONT_SIZE, color_bgr=cross_col)
 
             # ── Zone labels (bottom strip) ────────────────────
-            zone_lbl_y = h - 10
             zone_col   = (180, 255, 180)
             for disp_img, zone_labels in [
                 (l_disp, [(n1_disp, "A"), (n2_cam1, "B1")]),
                 (r_disp, [(n2_cam2, "B2"), (n3_disp, "C")]),
             ]:
                 for cx, zlbl in zone_labels:
-                    cv2.putText(disp_img, zlbl,
-                                (max(2, cx - 8), zone_lbl_y),
-                                font, 0.32, zone_col, 1)
+                    tw, th = text_size(zlbl, FONT_SIZE)
+                    put_text(disp_img, zlbl,
+                             (max(2, cx - tw // 2), h - 10 - th),
+                             font_size=FONT_SIZE, color_bgr=zone_col)
 
             # ── Camera labels ─────────────────────────────────
-            cv2.putText(l_disp, "LEFT",  (6, 18),
-                        cv2.FONT_HERSHEY_DUPLEX, 0.35, (0, 220, 80), 1)
-            cv2.putText(r_disp, "RIGHT", (6, 18),
-                        cv2.FONT_HERSHEY_DUPLEX, 0.35, (0, 220, 80), 1)
+            put_text(l_disp, "LEFT",  (6, 4),
+                     font_size=FONT_SIZE, color_bgr=(0, 220, 80))
+            put_text(r_disp, "RIGHT", (6, 4),
+                     font_size=FONT_SIZE, color_bgr=(0, 220, 80))
 
             # Sync error warning
             if not pair.sync_ok:
-                cv2.putText(l_disp,
-                            f"SYNC {pair.sync_error_ms:.0f}ms",
-                            (10, 56),
-                            cv2.FONT_HERSHEY_DUPLEX, 0.30,
-                            (0, 100, 255), 1)
+                put_text(l_disp,
+                          f"SYNC {pair.sync_error_ms:.0f}ms",
+                          (10, 42),
+                          font_size=FONT_SIZE, color_bgr=(0, 100, 255))
 
             # Centre divider
             divider = np.zeros((h, 4, 3), dtype=np.uint8)
@@ -496,6 +494,19 @@ class DualCameraPanel:
         lay.addWidget(disp_combo)
         self._disp_mode_combos.append(disp_combo)
 
+        # Fullscreen popout
+        fs_btn = QPushButton("⛶ Fullscreen")
+        theme_manager.register_widget(
+            fs_btn, lambda p: (
+                f"QPushButton{{background:{p['input_bg']};color:{p['text']};"
+                f"border:1px solid {p['border']};border-radius:3px;"
+                f"padding:4px 8px;font-family:'Noto Sans',Arial,sans-serif;"
+                f"font-size:9px;}}"
+                f"QPushButton:hover{{background:{p['btn_hover']};}}"))
+        fs_btn.setFixedHeight(28)
+        fs_btn.clicked.connect(lambda: self.open_fullscreen_view(bar.window()))
+        lay.addWidget(fs_btn)
+
         lay.addStretch()
 
         # Status label
@@ -535,6 +546,67 @@ class DualCameraPanel:
         lay.addWidget(lbl)
         self._display_lbls.append(lbl)
         return w
+
+    def remove_display_widget(self, container: QWidget):
+        """
+        Unregister a display widget (from display_widget()) so it
+        stops receiving frame updates. Call this when a popup/
+        fullscreen view showing it is closed -- otherwise
+        _display_lbls quietly accumulates a dead entry every time one
+        is opened and closed (harmless on its own, since _show()
+        already guards against a destroyed widget with a RuntimeError
+        catch, but wasteful over a long session with repeated open/
+        close of the fullscreen view).
+        """
+        lbl = container.findChild(QLabel)
+        if lbl is not None and lbl in self._display_lbls:
+            self._display_lbls.remove(lbl)
+
+    def open_fullscreen_view(self, parent=None) -> QDialog:
+        """
+        Open the live camera feed in a fullscreen popup window.
+
+        Uses the same multi-display-widget mechanism display_widget()
+        already provides for embedding the feed in more than one tab
+        at once: the popup gets its OWN QLabel via a fresh
+        display_widget() call, which is automatically kept in sync
+        with live frames in parallel with whatever's already embedded
+        in the tab -- no extra frame-routing logic needed here.
+        """
+        dlg = QDialog(parent)
+        dlg.setWindowTitle("Live Camera Feed — Fullscreen")
+        theme_manager.register_widget(
+            dlg, lambda p: f"background-color:{p['bg0']};")
+        lay = QVBoxLayout(dlg)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(0)
+
+        hint = QLabel("Press Esc or click here to exit fullscreen")
+        hint.setAlignment(Qt.AlignCenter)
+        hint.setFixedHeight(24)
+        hint.setCursor(Qt.PointingHandCursor)
+        theme_manager.register_widget(
+            hint, lambda p: (
+                f"background-color:{p['bg2']};color:{p['muted']};"
+                f"font-family:'Noto Sans',Arial,sans-serif;font-size:10px;"))
+        hint.mousePressEvent = lambda ev: dlg.close()
+        lay.addWidget(hint)
+
+        display = self.display_widget()
+        lay.addWidget(display, stretch=1)
+
+        def _key_press(event):
+            if event.key() == Qt.Key_Escape:
+                dlg.close()
+        dlg.keyPressEvent = _key_press
+
+        def _on_close(event):
+            self.remove_display_widget(display)
+            event.accept()
+        dlg.closeEvent = _on_close
+
+        dlg.showFullScreen()
+        return dlg
 
     # ── Control bar button logic ──────────────────────────────
 

@@ -42,6 +42,7 @@ from PyQt5.QtCore import Qt, QTimer, pyqtSignal
 
 from gui.style import LED, _divider, _muted, _sec
 from gui.theme_manager import theme_manager, _darken
+from gui.frame_text import put_text, text_size
 from gui.shared_log import UnifiedLog
 
 # ── RGB detection pipeline ────────────────────────────────────
@@ -996,9 +997,9 @@ class DetectionPanelRGB(QWidget):
         side-by-side display image.
 
         Style constants — all in one place for easy tuning:
-          FONT        : FONT_HERSHEY_DUPLEX (cleaner, closer to Courier)
-          FONT_SCALE  : 0.32  — small, unobtrusive
-          FONT_THICK  : 1     — single pixel weight
+          FONT_SIZE   : 13   — Noto Sans (via gui/frame_text.py), matches
+                        the rest of the app's UI font instead of
+                        OpenCV's blocky Hershey vector font
           BOX_THICK   : 1     — thin detection boxes
           ZONE_THICK  : 1     — thin zone boundary lines (2 when active)
           DASH        : 6/12  — short dashes on nozzle centerline
@@ -1009,9 +1010,7 @@ class DetectionPanelRGB(QWidget):
             return img
 
         # ── Style constants ───────────────────────────────────
-        FONT        = cv2.FONT_HERSHEY_DUPLEX   # crisp, close to monospace
-        FONT_SCALE  = 0.32                       # small, readable
-        FONT_THICK  = 1
+        FONT_SIZE   = 13                         # Noto Sans, small/readable
         BOX_THICK   = 1                          # thin detection boxes
         ZONE_THICK  = 1                          # thin zone lines
 
@@ -1057,11 +1056,10 @@ class DetectionPanelRGB(QWidget):
             cv2.rectangle(out, (dx1, 0), (dx2, h), color, thickness)
 
             # Zone label — small, bottom of frame
-            (tw, th), _ = cv2.getTextSize(zlbl, FONT, FONT_SCALE, FONT_THICK)
+            tw, th = text_size(zlbl, FONT_SIZE)
             lx = dx1 + max(4, (dx2 - dx1 - tw) // 2)
-            cv2.putText(out, zlbl, (lx, h - 6),
-                        FONT, FONT_SCALE, color,
-                        FONT_THICK, cv2.LINE_AA)
+            put_text(out, zlbl, (lx, h - 6 - th),
+                     font_size=FONT_SIZE, color_bgr=color)
 
             # Nozzle centerline — short fine dashes
             DASH, GAP = 6, 10
@@ -1090,17 +1088,11 @@ class DetectionPanelRGB(QWidget):
 
             # Label: "classname conf" — small text, dark background pill
             label = f"{det.class_name} {det.confidence:.2f}"
-            (tw, th), bl = cv2.getTextSize(
-                label, FONT, FONT_SCALE, FONT_THICK)
-            ty = max(by1 - 2, th + 2)
-            # Dark backing rectangle for readability
-            cv2.rectangle(out,
-                          (bx1, ty - th - 2),
-                          (bx1 + tw + 4, ty + 1),
-                          (15, 15, 15), -1)
-            cv2.putText(out, label, (bx1 + 2, ty - 1),
-                        FONT, FONT_SCALE, col,
-                        FONT_THICK, cv2.LINE_AA)
+            tw, th = text_size(label, FONT_SIZE)
+            ty = max(by1 - th - 4, 2)
+            put_text(out, label, (bx1 + 2, ty),
+                     font_size=FONT_SIZE, color_bgr=col,
+                     bg_color_bgr=(15, 15, 15), pad=2)
 
         for det in dual_result.left.detections:
             _draw_detection(det, x_offset=0)
@@ -1115,11 +1107,8 @@ class DetectionPanelRGB(QWidget):
         hud  = (f"{mode}{stub}  FPS:{self._fps:.0f}"
                 f"  Det:{dual_result.total_detections}"
                 f"  Ev:{self._events}")
-        (hw, hh), _ = cv2.getTextSize(hud, FONT, FONT_SCALE, FONT_THICK)
-        cv2.rectangle(out, (0, 0), (hw + 8, hh + 6), (10, 10, 10), -1)
-        cv2.putText(out, hud, (4, hh + 3),
-                    FONT, FONT_SCALE, (180, 210, 255),
-                    FONT_THICK, cv2.LINE_AA)
+        put_text(out, hud, (4, 3), font_size=FONT_SIZE,
+                 color_bgr=(180, 210, 255), bg_color_bgr=(10, 10, 10), pad=3)
         return out
 
     # ── Callbacks ─────────────────────────────────────────────
