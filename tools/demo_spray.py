@@ -290,6 +290,22 @@ class Demo:
         self._events  = []
         self._lock    = threading.Lock()
 
+        # Explicit shutdown signal for the background detection thread
+        # (see run(), which spawns _detection_loop() as a daemon
+        # thread). That thread's own while-loop previously only
+        # checked `traveled >= self.target` -- when the OUTER
+        # monitoring loop in run() exits for any other reason (stall,
+        # timeout), the detection thread had no way to know and just
+        # kept running indefinitely, still calling
+        # self.camera.grab_pair() during run()'s cleanup sequence --
+        # racing against self.camera.close() from a level above the
+        # thread-join fix already made inside DualEMEETCamera.stop().
+        # This event lets run() explicitly tell the detection thread
+        # to stop and wait for it to actually exit before releasing
+        # the camera, closing that separate race.
+        self._detection_stop = threading.Event()
+        self.det_thread = None
+
         # Real detection mode needs the detection stack importable AND
         # a model to run. Falls back to dummy (random-trigger) mode if
         # either is missing, rather than crashing -- this script needs
@@ -391,8 +407,10 @@ class Demo:
         """Original random-trigger demo mode — no camera/model needed.
         Useful in isolation for testing spray timing/look-ahead logic."""
         zone_names = ["Zone A (N1)", "Zone B (N2)", "Zone C (N3)"]
-        while True:
+        while not self._detection_stop.is_set():
             time.sleep(random.uniform(*DETECT_INTERVAL))
+            if self._detection_stop.is_set():
+                break
             traveled = self.odom.distance_traveled()
             if traveled >= self.target:
                 break
@@ -437,7 +455,7 @@ class Demo:
         / ZoneManagerRGB.update(dual_result) API, and the same
         never-spray-sugarbeet safety filter on confirmed triggers.
         """
-        while True:
+        while not self._detection_stop.is_set():
             traveled = self.odom.distance_traveled()
             if traveled >= self.target:
                 break
@@ -569,6 +587,7 @@ class Demo:
 
         # Start detection thread
         det = threading.Thread(target=self._detection_loop, daemon=True)
+        self.det_thread = det
         det.start()
 
         # Drive forward via SSH
@@ -614,6 +633,23 @@ class Demo:
 
         # Stop everything
         print()
+
+        # Signal the detection thread to stop and WAIT for it to
+        # actually exit before touching the camera below -- this is
+        # the fix for a real crash: that thread's own loop condition
+        # only checked `traveled >= self.target`, so when this outer
+        # loop exits for any OTHER reason (stall/timeout, both common
+        # in --dry-run testing where the Husky never actually moves),
+        # the detection thread previously kept running indefinitely,
+        # still calling self.camera.grab_pair() while the cleanup
+        # below released the camera out from under it.
+        self._detection_stop.set()
+        if self.det_thread is not None and self.det_thread.is_alive():
+            self.det_thread.join(timeout=2.0)
+            if self.det_thread.is_alive():
+                print("[DEMO]  ⚠ detection thread did not exit within "
+                      "2.0s -- continuing cleanup anyway")
+
         self.husky.stop()
         time.sleep(0.5)
         self.arduino.all_off()
@@ -689,6 +725,9 @@ def main():
         demo.run()
     except KeyboardInterrupt:
         print("\n[DEMO]  Interrupted")
+        demo._detection_stop.set()
+        if demo.det_thread is not None and demo.det_thread.is_alive():
+            demo.det_thread.join(timeout=2.0)
         demo.husky.stop()
         demo.arduino.all_off()
         demo.odom.stop()
