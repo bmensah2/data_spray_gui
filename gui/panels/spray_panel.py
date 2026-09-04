@@ -159,6 +159,22 @@ class SprayPanel(QWidget):
     _log_signal    = pyqtSignal(str)
     _check_signal  = pyqtSignal(str, str, str)
     _progress_signal = pyqtSignal(int, str)
+    # Emitted from _check_thread()'s finally block to re-enable the
+    # RUN FIELD CHECKS button. Deliberately a queued signal, not a
+    # direct QTimer.singleShot() call from that background thread --
+    # QTimer has thread affinity to whatever event loop is running
+    # where it's created/started, and a plain threading.Thread (like
+    # _check_thread) has no Qt event loop of its own, so a QTimer
+    # started there is not reliably delivered. Signals emitted from a
+    # non-GUI thread and connected with Qt's default (queued)
+    # connection type ARE correctly marshaled onto the main thread --
+    # the same pattern _log_signal/_check_signal already use
+    # successfully for updating the check rows and log from this same
+    # thread. This was a latent bug in the original code too (the
+    # pre-existing "happy path" end of the check sequence used the
+    # same unreliable QTimer.singleShot() call), not something this
+    # session's exception-safety fix introduced.
+    _checks_finished_signal = pyqtSignal()
 
     def __init__(self, shared_log: UnifiedLog,
                  gantry_ctrl_ref,
@@ -176,6 +192,8 @@ class SprayPanel(QWidget):
         self._log_signal.connect(self._append_log)
         self._check_signal.connect(self._update_check)
         self._progress_signal.connect(self._update_progress)
+        self._checks_finished_signal.connect(
+            lambda: self.btn_run_checks.setEnabled(True))
 
         self._build_ui()
 
@@ -478,8 +496,7 @@ class SprayPanel(QWidget):
                     self._ctrl().send_command("pump off")
             except Exception:
                 pass
-            QTimer.singleShot(
-                0, lambda: self.btn_run_checks.setEnabled(True))
+            self._checks_finished_signal.emit()
 
     def _check_thread_body(self):
         passed = failed = 0
