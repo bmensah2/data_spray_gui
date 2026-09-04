@@ -26,6 +26,10 @@ from gui.panels.acquisition_panel_rgb import AcquisitionPanelRGB
 from gui.style import _sec, _muted
 from gui.panels.navigation_panel_rgb import NavigationPanelRGB
 from gui.panels.detection_panel_rgb import DetectionPanelRGB
+from gui.spray_event_table import (
+    build_spray_event_table, insert_spray_event_row,
+    build_stats_table, update_stats_row,
+)
 
 
 class DetectionTab(QWidget):
@@ -158,7 +162,47 @@ class DetectionTab(QWidget):
         mlay = QVBoxLayout(mid_w)
         mlay.setContentsMargins(0, 0, 0, 0)
         mlay.addWidget(self.camera.camera_control_bar())
+
+        # Status table (mode/FPS/inference/detections/events) above
+        # the camera view, and the Live Spray Event Feed table below
+        # it -- same shared table format/widgets as the fullscreen
+        # popout (gui/spray_event_table module), so switching between
+        # this normal view and fullscreen looks and behaves
+        # identically, just at a different size.
+        status_grp = QWidget()
+        stlay = QVBoxLayout(status_grp)
+        stlay.setContentsMargins(4, 4, 4, 0)
+        stlay.addWidget(_muted("Status"))
+        stats_table = build_stats_table(
+            ["Mode", "FPS", "Inference", "Detections", "Events"])
+        stlay.addWidget(stats_table)
+        mlay.addWidget(status_grp)
+
+        def _on_stats(stats, tbl=stats_table):
+            update_stats_row(tbl, [
+                stats.get("mode", "--"),
+                f"{stats.get('fps', 0):.1f}",
+                f"{stats.get('inference_ms', 0):.1f}ms",
+                stats.get("detections", 0),
+                stats.get("events", 0),
+            ])
+        self.detect.stats_updated.connect(_on_stats)
+
         mlay.addWidget(self.camera.display_widget())
+
+        events_grp = QWidget()
+        evlay = QVBoxLayout(events_grp)
+        evlay.setContentsMargins(4, 4, 4, 4)
+        evlay.addWidget(_muted("Live Spray Event Feed"))
+        events_table = build_spray_event_table()
+        events_table.setMaximumHeight(180)
+        evlay.addWidget(events_table)
+        mlay.addWidget(events_grp)
+
+        def _on_spray_event(event, tbl=events_table):
+            insert_spray_event_row(tbl, event)
+        self.detect.spray_event_signal.connect(_on_spray_event)
+
         splitter.addWidget(mid_w)
 
         # ── RIGHT: Navigation ─────────────────────────────────

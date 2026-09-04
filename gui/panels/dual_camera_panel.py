@@ -659,14 +659,12 @@ class DualCameraPanel:
         body.setContentsMargins(0, 0, 0, 0)
         body.setSpacing(0)
 
-        display = self.display_widget()
-        body.addWidget(display, stretch=3)
-
         connections = []   # (signal, slot) pairs to disconnect on close
 
         # Live status table (mode/FPS/inference/detections/events) --
         # replaces the HUD text that used to be baked into the video
-        # frame itself (see DetectionPanelRGB._draw_overlay()).
+        # frame itself (see DetectionPanelRGB._draw_overlay()). Shown
+        # ABOVE the camera view.
         stats_table = None
         if self.spray_event_source is not None:
             stats_grp = QWidget()
@@ -695,10 +693,13 @@ class DualCameraPanel:
             connections.append(
                 (self.spray_event_source.stats_updated, _on_stats))
 
+        display = self.display_widget()
+        body.addWidget(display, stretch=3)
+
         # Live spray-event feed — same table format as Session
         # Analysis's "Live Spray Event Feed" (Time, Zone, Nozzle,
         # Class, Conf, Pose, GPS), via the shared gui/spray_event_table
-        # module so both stay in sync.
+        # module so both stay in sync. Shown BELOW the camera view.
         events_table = None
         if self.spray_event_source is not None:
             events_grp = QWidget()
