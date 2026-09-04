@@ -1040,7 +1040,17 @@ class DetectionPanelRGB(QWidget):
 
         out    = img.copy()
         h, w   = out.shape[:2]
-        half_w = w // 2
+        # NOT w // 2. The incoming image is DualCameraPanel._build_display()'s
+        # Side-by-Side output: hstack(left[half_w], divider[4px], right[half_w]),
+        # so w == 2*half_w + 4 -- recovering half_w via (w-4)//2 exactly
+        # matches how _build_display() computed it in the first place.
+        # w // 2 is 2px too large (splits the 4px divider itself in
+        # half instead of subtracting it), which throws off both the
+        # per-pixel scale factor AND the right camera's starting
+        # offset below -- small on its own, but it compounds toward
+        # the edges of each half and was the actual cause of the
+        # nozzle/zone overlay not lining up with the real camera image.
+        half_w = (w - 4) // 2
 
         zones_cfg = self._cfg.zones
         scale     = half_w / 1920
