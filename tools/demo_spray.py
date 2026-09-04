@@ -319,7 +319,19 @@ class Demo:
                       f"falling back to dummy mode")
                 self.dummy_detect = True
 
-        if not dry_run and not self.dummy_detect and CAMERA_AVAILABLE:
+        # NOTE: camera connection is intentionally NOT gated on dry_run.
+        # --dry-run means "don't command hardware" (Arduino/Husky skip
+        # their real I/O elsewhere in this file via their own dry_run
+        # checks) -- it does not mean "don't read sensors." The camera
+        # is read-only; skipping it here would silently leave
+        # self.camera as None while self.dummy_detect stays False
+        # (since dry_run isn't a reason to fall back to dummy mode),
+        # which crashes _live_detection_loop() the moment it calls
+        # self.camera.grab_pair() on None. This is exactly what
+        # `--model ... --dry-run` (a completely reasonable way to test
+        # that live detection actually works, without risking real
+        # spray/drive commands) hit before this fix.
+        if not self.dummy_detect and CAMERA_AVAILABLE:
             self.camera = RGBCameraGrabber()
             if not self.camera.connected:
                 print("[DEMO]  Camera unavailable — dummy detect")
@@ -390,8 +402,17 @@ class Demo:
             with self._lock:
                 self._pending.append(ev)
             if self.report:
+                # record_spray_trigger's nozzle param is 0-indexed --
+                # session_report_rgb.py's print formatter adds +1 for
+                # display (matching spray_mission_rgb.py's convention
+                # of passing zone.nozzle_id directly). `nozzle` here is
+                # already 1-indexed (matches the Arduino protocol/
+                # SprayEvent/print statements below, which do need
+                # 1-indexed), so subtract 1 specifically for this call
+                # -- passing the 1-indexed value directly would double-
+                # increment when printed (e.g. nozzle=2 shows as "N3").
                 ev.record = self.report.record_spray_trigger(
-                    nozzle, zone_names[nozzle-1], x, y,
+                    nozzle - 1, zone_names[nozzle-1], x, y,
                     confirming_classes=["dummy"], confirming_confidences=[1.0])
             print(f"\n[DETECT] ⚡ Weed → {zone_names[nozzle-1]}"
                   f"  pos=({x:.2f},{y:.2f})"
@@ -481,8 +502,14 @@ class Demo:
                     names = [d.class_name for d in weed_dets]
                     confs = [d.confidence for d in weed_dets]
                     if self.report:
+                        # nozzle here is already 1-indexed (zone.nozzle_id + 1,
+                        # for the Arduino/SprayEvent/print statements below)
+                        # -- record_spray_trigger's nozzle param is 0-indexed
+                        # (see the matching comment in _dummy_detection_loop()
+                        # above), so pass zone.nozzle_id directly rather than
+                        # the already-incremented `nozzle`.
                         ev.record = self.report.record_spray_trigger(
-                            nozzle, zone.name, x, y,
+                            zone.nozzle_id, zone.name, x, y,
                             confirming_classes=names,
                             confirming_confidences=confs)
                     print(f"\n[DETECT] ⚡ {zone.name} confirmed "
