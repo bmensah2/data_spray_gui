@@ -347,7 +347,7 @@ class DualEMEETCamera:
         Returns None if either camera hasn't produced a frame yet.
 
         This is the primary method called every loop iteration
-        by detection_engine_rgb.py and main_rgb.py.
+        by detection_engine_rgb.py and main_gui_rgb.py.
         """
         with self._left_lock:
             left    = None if self._left_frame  is None else self._left_frame.copy()

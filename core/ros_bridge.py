@@ -10,8 +10,8 @@ and makes the latest pose, estop state, and connection status
 available to the rest of the detection pipeline.
 
 Used by:
-  - capture_tool.py    → tags every frame with robot position
-  - event_logger.py    → logs pose at each spray event
+  - detection_panel_rgb.py  → tags spray events with robot position
+  - event_logger.py         → logs pose at each spray event
   - actuation_controller.py → checks estop before firing nozzles
 
 Author : Bright Mensah | NDSU / Imaging System

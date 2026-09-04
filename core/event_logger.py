@@ -91,7 +91,8 @@ class EventLogEntry:
     gps_satellites:  Optional[int]   = None
     gps_valid:       bool = False
 
-    # Frame reference (links to capture_tool output)
+    # Optional link to a saved frame image, if this event's frame was
+    # separately captured/stored elsewhere
     frame_id:        Optional[str] = None
     frame_path:      Optional[str] = None
 

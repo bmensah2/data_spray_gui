@@ -30,6 +30,7 @@ import json
 import subprocess
 import logging
 import numpy as np
+from pathlib import Path
 
 # ── Arduino serial ────────────────────────────────────────────
 try:
@@ -38,36 +39,45 @@ try:
 except ImportError:
     SERIAL_AVAILABLE = False
 
-# ── Detection pipeline ────────────────────────────────────────
-# Try both import layouts: detection_engine.py lives in a `core/`
-# subpackage in some checkouts (per its own self-test's
-# `from core.detection_config import ...`), flat alongside this script
-# in others. Fall back to dummy-detect mode rather than crashing if
-# neither resolves — this script should still be runnable for spray
-# timing tests without the full detection stack installed.
+# ── Detection pipeline (dual RGB eMeet cameras) ─────────────────
+# Matches spray_mission_rgb.py's real, working import pattern --
+# this used to reference DetectionEngine/ZoneManager (no RGB suffix,
+# pre-RGB-pivot class names that no longer exist) and never actually
+# constructed or called them anywhere, with live detection hardcoded
+# off ("Live multispectral detection removed — using dummy mode").
+# Revived to use the real, current classes and actually wire them up
+# below, rather than leaving --dummy-detect as the only working mode.
 DETECTION_AVAILABLE = False
 try:
-    from core.detection_engine_rgb import DetectionEngine
-    from core.zone_manager_rgb import ZoneManager
-    from core.detection_config_rgb import get_weed_config, GrowthStage, CameraMode
+    from core.detection_engine_rgb import RGBDetectionEngine
+    from core.zone_manager_rgb import ZoneManagerRGB
+    from core.detection_config_rgb import get_weed_config
     DETECTION_AVAILABLE = True
-except ImportError:
-    try:
-        from detection_engine_rgb import DetectionEngine
-        from zone_manager_rgb import ZoneManager
-        from detection_config_rgb import get_weed_config, GrowthStage, CameraMode
-        DETECTION_AVAILABLE = True
-    except ImportError as e:
-        print(f"[DEMO]  ⚠ Detection stack not importable ({e}) — "
-              f"falling back to --dummy-detect mode only")
+except ImportError as e:
+    print(f"[DEMO]  ⚠ RGB detection stack not importable ({e}) — "
+          f"falling back to --dummy-detect mode only")
+
+# ── Dual RGB camera grabber ─────────────────────────────────────
+# Reuses spray_mission_rgb.py's RGBCameraGrabber (dual eMeet camera
+# wrapper, no Qt dependency) rather than duplicating that ~50 lines
+# of camera-init logic in a second script.
+CAMERA_AVAILABLE = False
+try:
+    from spray_mission_rgb import RGBCameraGrabber
+    CAMERA_AVAILABLE = True
+except ImportError as e:
+    print(f"[DEMO]  ⚠ RGBCameraGrabber not importable ({e}) — "
+          f"live detection needs spray_mission_rgb.py on the path")
 
 # ── Session telemetry / reporting ─────────────────────────────
 try:
-    from session_report import SystemConfigSnapshot, SessionReport
+    from session_report_rgb import (
+        SystemConfigSnapshot, SessionReportRGB as SessionReport
+    )
     REPORT_AVAILABLE = True
 except ImportError as e:
     REPORT_AVAILABLE = False
-    print(f"[DEMO]  ⚠ session_report.py not importable ({e}) — "
+    print(f"[DEMO]  ⚠ session_report_rgb.py not importable ({e}) — "
           f"running without telemetry/reporting")
 
 # ─────────────────────────────────────────────────────────────
@@ -265,18 +275,42 @@ class Demo:
         self._lock    = threading.Lock()
 
         # Real detection mode needs the detection stack importable AND
-        # either a model path or --dummy-detect explicitly NOT requested.
-        # Falls back to the old random-trigger demo if either is missing,
-        # rather than crashing — this script needs to stay usable for
-        # pure spray-timing tests without a trained model on hand.
-        self.dummy_detect = True
+        # a model to run. Falls back to dummy (random-trigger) mode if
+        # either is missing, rather than crashing -- this script needs
+        # to stay usable for pure spray-timing tests without a trained
+        # model on hand.
+        self.dummy_detect = dummy_detect or not DETECTION_AVAILABLE
         self.engine   = None
         self.zone_mgr = None
+        self.rgb_cfg  = None
         self.camera   = None
         self._imgsz   = imgsz
 
-        if not dummy_detect:
-            print("[DEMO]  Live multispectral detection removed — using dummy mode")
+        if DETECTION_AVAILABLE and not self.dummy_detect:
+            try:
+                self.rgb_cfg = get_weed_config()
+                if model_path:
+                    self.rgb_cfg.model.weed_rgb_pt = Path(model_path)
+                if conf is not None:
+                    self.rgb_cfg.model.confidence_threshold = conf
+                if device is not None:
+                    self.rgb_cfg.model.device = device
+                self.rgb_cfg.model.imgsz = imgsz
+                self.engine   = RGBDetectionEngine(self.rgb_cfg)
+                self.zone_mgr = ZoneManagerRGB(self.rgb_cfg)
+            except Exception as e:
+                print(f"[DEMO]  Detection init failed ({e}) — "
+                      f"falling back to dummy mode")
+                self.dummy_detect = True
+
+        if not dry_run and not self.dummy_detect and CAMERA_AVAILABLE:
+            self.camera = RGBCameraGrabber()
+            if not self.camera.connected:
+                print("[DEMO]  Camera unavailable — dummy detect")
+                self.dummy_detect = True
+        elif not self.dummy_detect and not CAMERA_AVAILABLE:
+            print("[DEMO]  RGBCameraGrabber unavailable — dummy detect")
+            self.dummy_detect = True
 
         print(f"\n{'='*55}")
         print(f"  ABEN SPRAY DEMO  (runs on Jetson)")
@@ -296,23 +330,25 @@ class Demo:
         self.report = None
         if REPORT_AVAILABLE:
             cfg_snapshot = SystemConfigSnapshot(
-                camera_model="none (dummy mode)",
+                camera_model=("none (dummy mode)" if self.dummy_detect
+                              else "eMeet C960 4K (Dual RGB)"),
                 model_path=str(model_path or "none"),
                 imgsz=imgsz,
                 confidence_threshold=(conf if conf is not None else
-                                       (self.engine.cfg.model.confidence_threshold
-                                        if self.engine else 0.45)),
-                device=(device or (self.engine.cfg.model.device if self.engine else "n/a")),
+                                       (self.rgb_cfg.model.confidence_threshold
+                                        if self.rgb_cfg else 0.45)),
+                device=(device or (self.rgb_cfg.model.device
+                                    if self.rgb_cfg else "n/a")),
                 detection_mode="DUMMY" if self.dummy_detect else "LIVE",
                 zone_threshold=(self.zone_mgr.zones[0].threshold
                                  if self.zone_mgr else 4),
                 drive_speed_mps=DRIVE_SPEED,
                 look_ahead_m=LOOK_AHEAD_M,
-                spray_window_m=SPRAY_WINDOW_M,
+                max_spray_dist_m=LOOK_AHEAD_M + SPRAY_WINDOW_M,
                 target_distance_m=dist,
                 session_start_iso=time.strftime("%Y-%m-%dT%H:%M:%S"),
-                field_id=(self.engine.cfg.session.field_id if self.engine else ""),
-                researcher=(self.engine.cfg.session.researcher if self.engine else ""),
+                field_id=(self.rgb_cfg.session.field_id if self.rgb_cfg else ""),
+                researcher=(self.rgb_cfg.session.researcher if self.rgb_cfg else ""),
             )
             self.report = SessionReport(cfg_snapshot)
         self._frame_index = 0
@@ -349,40 +385,54 @@ class Demo:
 
     def _live_detection_loop(self):
         """
-        Real detection: grab a frame, run YOLO inference, feed the result
-        through ZoneManager's multi-frame debounce filter. A SprayEvent is
-        only created when ZoneManager confirms a NEW trigger — i.e. the
-        same zone has shown a detection for `threshold` consecutive frames,
-        not on a single noisy frame. The existing look-ahead timing in
-        _update_spray() (fire at 16in travel, close at 16in+6in) is
-        unchanged — this loop only decides WHICH nozzle and WHEN to start
-        that timer, same as the dummy loop did.
+        Real detection: grab a synchronized dual-camera frame pair, run
+        YOLO inference via RGBDetectionEngine, feed the result through
+        ZoneManagerRGB's multi-frame debounce filter. A SprayEvent is
+        only created when ZoneManagerRGB confirms a NEW trigger -- i.e.
+        the same zone has shown a detection for `threshold` consecutive
+        frames, not on a single noisy frame. The existing look-ahead
+        timing in _update_spray() (fire at 16in travel, close at
+        16in+6in) is unchanged -- this loop only decides WHICH nozzle
+        and WHEN to start that timer, same as the dummy loop did.
+
+        Matches spray_mission_rgb.py's real detection loop (the actual
+        production mission runner) -- same RGBDetectionEngine.run(pair)
+        / ZoneManagerRGB.update(dual_result) API, and the same
+        never-spray-sugarbeet safety filter on confirmed triggers.
         """
         while True:
             traveled = self.odom.distance_traveled()
             if traveled >= self.target:
                 break
 
-            bands = self.camera.grab_bands()
+            pair = self.camera.grab_pair()
             if self.report:
-                self.report.record_camera_grab(success=bands is not None)
-            if bands is None:
+                self.report.record_camera_grab(
+                    success=pair is not None,
+                    sync_error_ms=(pair.sync_error_ms if pair else 0.0))
+            if pair is None:
                 time.sleep(0.02)
                 continue
 
-            result = self.engine.infer(bands)
-            decision = self.zone_mgr.update(result)
+            try:
+                dual_result = self.engine.run(pair)
+            except Exception as e:
+                print(f"[DEMO]  Inference error: {e}")
+                time.sleep(0.02)
+                continue
+
+            decision = self.zone_mgr.update(dual_result)
 
             if self.report:
                 x, y, speed = self.odom.get_pose()
                 self.report.record_frame(
                     frame_index=self._frame_index,
-                    preprocess_ms=result.preprocess_ms,
-                    inference_ms=result.inference_ms,
-                    total_ms=result.total_ms,
+                    preprocess_ms=dual_result.left.preprocess_ms,
+                    inference_ms=dual_result.total_ms,
+                    total_ms=dual_result.total_ms,
                     detections=[{"class_name": d.class_name,
                                  "confidence": d.confidence}
-                                for d in result.detections],
+                                for d in dual_result.all_detections()],
                     robot_x=x, robot_y=y, robot_speed=speed,
                     distance_traveled=traveled,
                 )
@@ -398,18 +448,29 @@ class Demo:
                 for zone_id in decision.new_triggers:
                     zone = self.zone_mgr.zones[zone_id]
                     nozzle = zone.nozzle_id + 1  # ZoneState is 0-indexed, Arduino is 1-indexed
+
+                    # Weed-only -- never spray sugarbeet (matches
+                    # spray_mission_rgb.py and the GUI's
+                    # ZoneManagerRGB.non_spray_classes filter)
+                    weed_dets = [d for d in zone.current_detections
+                                 if d.class_name != "sugarbeet"]
+                    if not weed_dets:
+                        print(f"[DETECT] {zone.name} triggered but no "
+                              f"weeds -- skipping (sugarbeet only)")
+                        continue
+
                     ev = SprayEvent(nozzle, x, y)
                     with self._lock:
                         self._pending.append(ev)
-                    names = [d.class_name for d in zone.current_detections]
-                    confs = [d.confidence for d in zone.current_detections]
+                    names = [d.class_name for d in weed_dets]
+                    confs = [d.confidence for d in weed_dets]
                     if self.report:
                         ev.record = self.report.record_spray_trigger(
                             nozzle, zone.name, x, y,
                             confirming_classes=names,
                             confirming_confidences=confs)
                     print(f"\n[DETECT] ⚡ {zone.name} confirmed "
-                          f"({result.count} det, {result.inference_ms:.0f}ms, "
+                          f"({len(weed_dets)} det, {dual_result.total_ms:.0f}ms, "
                           f"{names}) → N{nozzle}"
                           f"  pos=({x:.2f},{y:.2f})"
                           f"  travel={traveled:.2f}m"
