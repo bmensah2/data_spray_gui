@@ -410,7 +410,29 @@ class DualEMEETCamera:
 
         logging.info("DualEMEETCamera: stopping …")
         self._running = False
-        time.sleep(0.3)   # let threads exit cleanly
+
+        # Explicitly join the capture threads before releasing the
+        # VideoCapture objects -- a fixed sleep() here is a guess, not
+        # a guarantee, and calling .release() on a cv2.VideoCapture
+        # while another thread is still blocked inside .read() on that
+        # SAME object is a real race in OpenCV's C++ backend. This can
+        # surface as a low-level "terminate called without an active
+        # exception" crash during process teardown rather than a
+        # catchable Python exception -- confirmed via tools/demo_spray.py,
+        # which was (accidentally, via this session's earlier fixes)
+        # the first caller to actually exercise this stop() path in a
+        # way that reliably hit the race. join(timeout=...) rather than
+        # an unbounded join() so a genuinely stuck capture thread can't
+        # hang shutdown forever -- .release() still runs either way,
+        # same as before, just after actually confirming (not guessing)
+        # the threads are done or timed out.
+        for t in (self._left_thread, self._right_thread):
+            if t is not None and t.is_alive():
+                t.join(timeout=1.0)
+                if t.is_alive():
+                    logging.warning(
+                        f"DualEMEETCamera: {t.name} did not exit within "
+                        f"1.0s -- releasing camera anyway")
 
         self._left_cap.release()
         self._right_cap.release()
