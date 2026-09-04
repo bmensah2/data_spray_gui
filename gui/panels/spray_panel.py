@@ -18,6 +18,7 @@ import random
 import socket
 import threading
 import subprocess
+import logging
 
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout,
@@ -449,6 +450,38 @@ class SprayPanel(QWidget):
             target=self._check_thread, daemon=True).start()
 
     def _check_thread(self):
+        """
+        Thin wrapper around _check_thread_body() that GUARANTEES pump
+        cleanup and re-enabling the RUN FIELD CHECKS button, regardless
+        of what happens inside -- previously, any uncaught exception
+        anywhere in the check sequence (e.g. malformed odom UDP data
+        raising json.JSONDecodeError, not caught by the narrower
+        socket.timeout/OSError handlers around it) killed this
+        background thread silently: no further checks would run, the
+        pump could be left ON if the crash happened mid pump/nozzle
+        test, and the button would never get re-enabled since that
+        previously only happened at the very end of a normal,
+        exception-free run. Same "always call this, even on exception"
+        pattern used throughout the actuation-safety code elsewhere in
+        this project.
+        """
+        try:
+            self._check_thread_body()
+        except Exception as e:
+            self._log(f"\n✗ UNEXPECTED ERROR — checks aborted: {e}")
+            self.shared_log.log(
+                "SYS", f"System check crashed: {e}", "error")
+            logging.error("System check thread crashed", exc_info=True)
+        finally:
+            try:
+                if self._ctrl().state.connected:
+                    self._ctrl().send_command("pump off")
+            except Exception:
+                pass
+            QTimer.singleShot(
+                0, lambda: self.btn_run_checks.setEnabled(True))
+
+    def _check_thread_body(self):
         passed = failed = 0
 
         # 1. Arduino
@@ -511,6 +544,11 @@ class SprayPanel(QWidget):
                 self._ck("odom", "pass", f"x={x:.2f}  y={y:.2f}")
                 self._log(f"✓ Odom UDP: x={x:.3f}  y={y:.3f}")
                 passed += 1
+            else:
+                self._ck("odom", "fail", f"Unexpected message type")
+                self._log(f"✗ Odom UDP: received non-odom message "
+                          f"({msg.get('type', '?')})")
+                failed += 1
         except socket.timeout:
             self._ck("odom", "fail", "No UDP — check odom bridge")
             self._log("✗ No odom received (3s timeout)")
@@ -523,6 +561,17 @@ class SprayPanel(QWidget):
             else:
                 self._ck("odom", "fail", str(e)[:35])
                 failed += 1
+        except Exception as e:
+            # Malformed UDP payload (json.JSONDecodeError, etc.) --
+            # previously uncaught here, which crashed the whole
+            # background check thread silently: no more checks would
+            # run (including the pump/nozzle tests further down, which
+            # could leave the pump ON if it died mid-test), and the
+            # RUN FIELD CHECKS button would never get re-enabled since
+            # that only happened at the very end of a normal run.
+            self._ck("odom", "fail", f"Parse error: {str(e)[:30]}")
+            self._log(f"✗ Odom UDP: unexpected data ({e})")
+            failed += 1
 
         # 5. Pump
         self._ck("pump", "pend", "Testing...")
@@ -581,8 +630,9 @@ class SprayPanel(QWidget):
 
         self.lbl_overall.setText(txt)
         self.lbl_overall.setStyleSheet(style)
-        QTimer.singleShot(
-            0, lambda: self.btn_run_checks.setEnabled(True))
+        # NOTE: RUN FIELD CHECKS re-enable now happens in _check_thread()'s
+        # finally block instead of here, so it's guaranteed even if this
+        # method exits early via an exception.
 
     # ── Spray demo ────────────────────────────────────────────
 
