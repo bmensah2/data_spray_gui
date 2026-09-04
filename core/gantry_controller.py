@@ -1,6 +1,6 @@
 """
 gantry_controller.py
-ABEN Imaging Gantry — Serial Communication Backend
+Field Imaging System — Serial Communication Backend
 Handles all Arduino communication in a dedicated thread.
 Thread-safe command queue, response parsing, state tracking.
 """

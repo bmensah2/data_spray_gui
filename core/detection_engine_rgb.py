@@ -4,7 +4,7 @@ detection_engine_rgb.py
 eMeet Dual RGB Detection System — YOLO Inference Engine
 
 Standard 3-channel BGR inference for both eMeet cameras.
-Model weights are not available yet — engine runs in STUB MODE
+If model weights are not available yet — engine runs in STUB MODE
 until weed_rgb.pt / cls_rgb.pt are trained and placed in models/.
 
 Key design:
@@ -15,7 +15,7 @@ Key design:
   - Stub mode returns empty detections so the full pipeline can be
     tested end-to-end before model weights exist
 
-Author : Nana | NDSU / PhD Imaging System
+Author : Bright Mensah | NDSU / Imaging System
 Path   : /media/pagsun/Transcend/phd_project/emeet_dual_cam/
 """
 
@@ -193,7 +193,7 @@ class RGBDetectionEngine:
     # checkpoint itself, so once a real model loads this dict is
     # overwritten with the correct names/order automatically — this
     # is purely the stub-mode fallback shown before any model exists).
-    # Matches yolo_dataset_20/classes.json as of the first real
+    # Matches yolo_dataset/classes.json as of the first real
     # multiweed_detection training dataset (2026 summer data).
     DEFAULT_CLASS_NAMES = {
         0: 'sugarbeet',

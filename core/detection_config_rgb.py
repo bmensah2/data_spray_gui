@@ -3,13 +3,10 @@
 detection_config_rgb.py
 eMeet Dual RGB Detection System — Centralized Configuration
 
-RGB-only fork of the multispectral detection_config.py.
-All multispectral / 4-channel / band-specific config removed.
-
 Zone geometry measured 2026-06-26 using tape measure calibration.
 measured in the field (see CALIBRATION NOTE below).
 
-Author : Nana | NDSU / PhD Imaging System
+Author : Bright Mensah | NDSU / Imaging System
 Path   : /media/pagsun/Transcend/phd_project/emeet_dual_cam/
 """
 

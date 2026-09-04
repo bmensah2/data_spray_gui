@@ -1,11 +1,11 @@
 """
 main_gui_v3.py
-ABEN Field Imaging System — Redesigned GUI v3.0
+Imaging and Spraying Dashboard — v1.0
 
 5-Tab modular architecture:
-  Tab 1: Data Collection   — Gantry | Camera | Navigation
-  Tab 2: Detection         — Spray  | Camera | Navigation
-  Tab 3: Data Analysis     — Bands  | Indices | Statistics
+  Tab 1: Data Collection   — Gantry | Camera | Navigation | Data Acquisition
+  Tab 2: Detection         — Spray  | Camera | Navigation | Detection and Spray Mode
+  Tab 3: Session Analysis     — Spray Logs | Detection Logs | Data Analysis
   Tab 4: Future
   Tab 5: Future
 
@@ -37,11 +37,8 @@ from gui.keyboard_nav import KeyboardNav
 from gui.panels.dual_camera_panel import DualCameraPanel as CameraPanel
 from gui.panels.gantry_panel import GantryPanel
 from gui.panels.navigation_panel_rgb import NavigationPanelRGB as NavigationPanel
-# ── Patch AcquisitionPanel → AcquisitionPanelRGB before tabs load ──
-# tab_collection and tab_detection import AcquisitionPanel by name
-# from gui.panels.acquisition_panel.  We replace that reference in
-# sys.modules so both tabs transparently get AcquisitionPanelRGB
-# without needing to fork the tab files.
+
+
 import sys
 import types
 from gui.panels.acquisition_panel_rgb import AcquisitionPanelRGB
@@ -55,8 +52,7 @@ _det_shim = types.ModuleType("gui.panels.detection_panel")
 _det_shim.DetectionPanel = DetectionPanelRGB
 sys.modules["gui.panels.detection_panel"] = _det_shim
 
-# NavigationPanelRGB imported directly above — no shim needed.
-# tab_detection.py also imports NavigationPanelRGB directly.
+
 # ──────────────────────────────────────────────────────────────────
 
 from gui.tabs.tab_collection import CollectionTab
@@ -74,17 +70,9 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle(
-            "ABEN Field Imaging System  v3.0")
+            "IMAGING AND SPRAYING DASHBOARD V1.0")
         self.setMinimumSize(1400, 820)
         self.resize(1600, 900)
-        # No self.setStyleSheet(STYLE) here -- the app-wide QSS is
-        # applied once via theme_manager.apply(..., app=app) in the
-        # entry point below, BEFORE this window is constructed, so
-        # every widget (including this one) inherits it correctly.
-        # A widget-level setStyleSheet() call here would take CSS
-        # precedence over the app-level one and silently pin this
-        # window to whatever theme was active the first time this
-        # line ran, defeating theme switching.
         self._build_shared()
         self._build_ui()
         self._build_menu()
@@ -112,8 +100,7 @@ class MainWindow(QMainWindow):
         self.nav_collection = NavigationPanel(self._sys_log)
         self.nav_detection  = NavigationPanel(self._sys_log)
 
-        # Acquisition panel — ONE shared instance so camera settings
-        # are always consistent between Data Collection and Detection.
+
         # Tab 1 owns the full widget; Tab 2 uses only the camera subtab.
         self.acq = AcquisitionPanelRGB(self._sys_log, self.camera)
 
@@ -155,14 +142,6 @@ class MainWindow(QMainWindow):
         self.tab3 = AnalysisTab(self.gantry, self.tab2.detect)
 
         # ── Cross-tab movement lock ─────────────────────────────
-        # Data Collection and Detection each drive the Husky through
-        # their own independent SSH subprocess with no coordination
-        # between them (see NavigationPanelRGB.set_movement_controls_enabled
-        # for the full explanation). Enforce mutual exclusion here:
-        # Data Collection starts as the only active tab; Detection's
-        # movement controls stay locked until the operator explicitly
-        # arms detection, at which point Collection's controls lock
-        # instead. Disarming/E-Stopping hands control back to Collection.
         self.nav_detection.set_movement_controls_enabled(False)
         self.nav_collection.set_movement_controls_enabled(True)
         self.tab2.armed_changed.connect(self._on_detection_armed_changed)
@@ -176,7 +155,7 @@ class MainWindow(QMainWindow):
         self.main_tabs.addTab(
             self._future_tab("Tab 4"), "🔬  Future")
         self.main_tabs.addTab(
-            self._future_tab("Tab 5"), "⚙  Future")
+            self._future_tab("Tab 5"), "🔬 Future")
 
         lay.addWidget(self.main_tabs, stretch=1)
 
@@ -212,7 +191,7 @@ class MainWindow(QMainWindow):
         r1lay.setContentsMargins(6, 4, 6, 2)
         r1lay.setSpacing(10)
 
-        title = QLabel("ABEN  DUAL  RGB  IMAGING  SYSTEM  v1.0")
+        title = QLabel("DUAL RGB IMAGING SYSTEM")
         theme_manager.register_widget(
             title, lambda p: (
                 f"color:{p['text']};font-size:15px;font-weight:bold;"
@@ -349,11 +328,6 @@ class MainWindow(QMainWindow):
     def _open_realsense(self):
         """
         Launch RealSense viewer as a SEPARATE PROCESS.
-
-        Root cause of lag: Python GIL — both cameras in same process
-        compete for the interpreter lock, causing frame drops in both.
-        Running as subprocess gives each its own GIL — zero competition.
-
         The viewer window appears independently and stays open until
         the user closes it. Closing main GUI does NOT kill the viewer.
         """
@@ -554,11 +528,9 @@ class MainWindow(QMainWindow):
 
     def _build_menu(self):
         mb = self.menuBar()
-        # No inline stylesheet here -- theme_manager's app-level QSS
-        # (_STYLE_TEMPLATE in theme_manager.py) already styles
-        # QMenuBar/QMenu for the active theme. A widget-level override
-        # here would have pinned the menu bar to one fixed set of hex
-        # colors regardless of the selected theme.
+        # theme_manager's app-level QSS
+        # (_STYLE_TEMPLATE in theme_manager.py)
+        # QMenuBar/QMenu for the active theme.
         fm = mb.addMenu("File")
         q = QAction("Quit", self)
         q.setShortcut("Ctrl+Q")
@@ -678,10 +650,7 @@ if __name__ == "__main__":
     app.setStyle("Fusion")
     # Load the operator's saved theme choice (falls back to the
     # aben_dark default if none was ever saved) and apply the
-    # app-level QSS BEFORE any window/widget is constructed, so every
-    # panel's theme_manager.register_widget()/register_button() calls
-    # during construction pick up the correct starting theme rather
-    # than always defaulting to aben_dark regardless of what was saved.
+    # app-level QSS BEFORE any window/widget is constructed.
     theme_manager.load()
     theme_manager.apply(theme_manager.current, app=app, save=False)
     win = MainWindow()

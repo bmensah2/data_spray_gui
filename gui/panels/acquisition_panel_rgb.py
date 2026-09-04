@@ -150,6 +150,7 @@ class CameraSettingsWidget(QWidget):
         fg = QVBoxLayout(foc_grp)
 
         self.chk_autofocus = QCheckBox("Auto Focus (continuous)")
+        self.chk_autofocus.setChecked(True)
         self.chk_autofocus.stateChanged.connect(self._on_autofocus_toggle)
         fg.addWidget(self.chk_autofocus)
 
@@ -512,7 +513,7 @@ class CameraSettingsWidget(QWidget):
 
     def _reset_defaults(self):
         """Restore the validated field-ready default values."""
-        self.chk_autofocus.setChecked(False)
+        self.chk_autofocus.setChecked(True)
         self.spn_focus.setValue(460)
         self.chk_auto_exp.setChecked(False)
         self.spn_exposure.setValue(300)

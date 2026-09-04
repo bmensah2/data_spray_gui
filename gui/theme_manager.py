@@ -1,11 +1,11 @@
 """
 gui/theme_manager.py
-ABEN Field Imaging System — Theme Manager
+Field Imaging System — Theme Manager
 
 Provides a registry-based theming engine on top of the existing
 gui/style.py look-and-feel. Seven themes are available:
 
-    aben_dark           — the original field-tested dark theme (DEFAULT)
+    field_dark           — the original field-tested dark theme (DEFAULT)
     dark_professional   — enhanced dark professional
     dark_blue           — sophisticated dark blue
     midnight            — deep midnight / code-editor style
@@ -28,7 +28,7 @@ palette we can generate:
                                       roles: green, blue, amber, purple,
                                       red, off, off_border
 
-For "aben_dark" the generated STYLE / button styles / LED colors are
+For "field_dark" the generated STYLE / button styles / LED colors are
 byte-identical (or visually identical) to the original field-tested
 gui/style.py — selecting it does not change anything.
 
@@ -128,8 +128,8 @@ def _btn(bg: str, fg: str = "#ffffff",
 #   green, blue, amber, red,
 #   teal, purple, connect      semantic accent colors
 
-# ── ABEN Dark (DEFAULT) — exact values from the original gui/style.py ──
-_ABEN_DARK = dict(
+# ── Field Dark (DEFAULT) — exact values from the original gui/style.py ──
+_FIELD_DARK = dict(
     bg="#0f1117", bg0="#0a0d14", bg2="#131720", bg3="#181c27",
     border="#3a4055", border2="#2a2f3d",
     text="#e8eaf0", text_dim="#b0b8c8", muted="#8090a8",
@@ -206,7 +206,10 @@ def _derive_palette(base: dict) -> dict:
 
 
 # ── Build the final PALETTES dict (lazy, computed once at import) ──
-PALETTES = {"aben_dark": dict(_ABEN_DARK)}
+PALETTES = {
+    "field_dark": dict(_FIELD_DARK),
+    "aben_dark": dict(_FIELD_DARK),
+}
 for _name, _base in _NEW_THEME_BASES.items():
     PALETTES[_name] = _derive_palette(_base)
 
@@ -468,11 +471,11 @@ def build_style(theme_key: str) -> str:
         blue_dark=_darken(p["blue"], 40),
         amber_light=_lighten(p["amber"], 35),
         amber_dark=_darken(p["amber"], 45),
-        input_focus=_lighten(p["input_bg"], 20) if theme_key != "aben_dark"
+        input_focus=_lighten(p["input_bg"], 20) if theme_key not in ("field_dark", "aben_dark")
         else "#1e2238",
-        tab_hover_bg=_lighten(p["input_bg"], 12) if theme_key != "aben_dark"
+        tab_hover_bg=_lighten(p["input_bg"], 12) if theme_key not in ("field_dark", "aben_dark")
         else "#202535",
-        tab_hover_text=_lighten(p["muted"], 30) if theme_key != "aben_dark"
+        tab_hover_text=_lighten(p["muted"], 30) if theme_key not in ("field_dark", "aben_dark")
         else "#c0c8d8",
     )
     fmt = dict(p)

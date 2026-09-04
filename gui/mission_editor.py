@@ -1,6 +1,6 @@
 """
 gui/mission_editor.py
-ABEN Field Imaging System — Mission YAML Editor Dialog
+Field Imaging System — Mission YAML Editor Dialog
 
 Built-in editor for creating and editing mission YAML files.
 Features:
@@ -35,16 +35,6 @@ HUSKY_USER     = "administrator"
 MISSIONS_HUSKY = "~/missions"
 
 # -- Styles -------------------------------------------------------
-# These used to be module-level string constants computed once at
-# import time -- meaning they were permanently frozen to whichever
-# theme happened to be active the first time this module was
-# imported, and never reflected the theme active when a mission
-# editor dialog was actually opened. Converted to functions that
-# build fresh from theme_manager.palette() each time they're called
-# (at dialog construction, and again via register_widget() for any
-# widget that should also update live if the theme changes while
-# the dialog is open).
-
 def _editor_style(p):
     return (
         f"background:{p['bg0']};"
@@ -112,7 +102,7 @@ steps:<br>
 
 
 TEMPLATE_YAML = """\
-# ABEN Mission File
+# Field Mission File
 description: 'New mission'
 speed: 0.1            # m/s — field speed
 capture_interval: 0.5 # meters between captures (20in)
@@ -235,14 +225,6 @@ class MissionEditorDialog(QDialog):
 
         hlay.addWidget(QLabel("─" * 28))
 
-        # Help — HTML content itself depends on the palette (not just
-        # CSS), so it's built once at dialog-open time rather than
-        # wired to theme_manager.on_change(): that hook has no cleanup
-        # mechanism (unlike register_widget/register_button, which use
-        # weakrefs), so a callback registered per-dialog-open would
-        # leak a reference to this widget forever after the dialog
-        # closes. This dialog is short-lived; correct-at-open-time is
-        # the right tradeoff here.
         help_lbl = QLabel(_help_html(theme_manager.palette()))
         help_lbl.setWordWrap(True)
         help_lbl.setAlignment(Qt.AlignTop)

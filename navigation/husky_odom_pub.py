@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """
-husky_odom_pub.py  v2
-ABEN Field Detection System — Husky Odometry UDP Publisher
+husky_odom_pub.py  v1
+Field Detection System — Husky Odometry UDP Publisher
 
 Runs ON THE HUSKY ONBOARD PC (Ubuntu 20.04 / ROS Noetic)
 
-v2: Uses 'rostopic echo' subprocess instead of rospy.init_node()
+v1: Uses 'rostopic echo' subprocess instead of rospy.init_node()
     Completely avoids ROS_IP / hanging initialization issues.
     No rospy needed — just the rostopic CLI tool which is always
     available when ROS is sourced.
@@ -262,7 +262,7 @@ def _heartbeat_loop(sender: UDPSender, port: int,
 
 def main():
     ap = argparse.ArgumentParser(
-        description='ABEN Husky Odometry UDP Publisher v2'
+        description='Field Detection System — Husky Odometry UDP Publisher v1'
     )
     ap.add_argument('--jetson-ip', required=True,
                     help='Jetson IP (192.168.131.51)')
@@ -283,7 +283,7 @@ def main():
     )
 
     logging.info("=" * 50)
-    logging.info("ABEN Odometry UDP Publisher v2")
+    logging.info("Field Detection System — Husky Odometry UDP Publisher v1")
     logging.info(f"Jetson target : {args.jetson_ip}")
     logging.info(f"Odom topic    : {args.odom_topic}")
     logging.info(f"Odom rate     : {args.odom_hz} Hz")

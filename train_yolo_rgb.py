@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 train_yolo_rgb.py
-ABEN Dual RGB Detection System — YOLO Segmentation Training
+Dual RGB Detection System — YOLO Segmentation Training
 
 Trains a YOLO instance segmentation model on standard 3-channel BGR
 JPEGs captured by the dual eMeet camera system. Supports any
@@ -11,19 +11,19 @@ nothing else about training, evaluation, or the runtime inference
 engine (core/detection_engine_rgb.py) cares which family produced a
 given .pt file.
 
-Differences from train_yolo_4ch.py
+Notes
 ------------------------------------
-  - Standard 3-channel BGR input — no custom architecture YAML needed
+  - Standard 3-channel BGR input
   - Uses pretrained COCO weights (yolov8n-seg.pt / yolo11n-seg.pt /
-    yolo26n-seg.pt) — much faster convergence vs 4-channel training
-    from scratch
+    yolo26n-seg.pt) — much faster convergence
   - No prepare step needed — labelme_converter_rgb.py already produces
     the correct images/train|val + labels/train|val structure
-  - Input size: 640×640 (YOLO default) vs 512×512 for multispec
+  - Input size: 640×640 (YOLO default)
   - data_rgb.yaml already written by labelme_converter_rgb.py
 
 Dataset structure expected (from labelme_converter_rgb.py export):
     yolo_dataset/
+    ├── classes.json
     ├── images/
     │   ├── train/*.jpg
     │   └── val/*.jpg
@@ -80,7 +80,7 @@ ultralytics/torch/CUDA are actually set up correctly -- especially on
 a Jetson, where a generic pip-installed torch silently falls back to
 CPU-only training instead of failing loudly.
 
-Author : Nana | NDSU / PhD Imaging System
+Author : Bright Mensah | NDSU / Imaging System
 Path   : /media/pagsun/Transcend/phd_project/emeet_dual_cam/
 """
 
@@ -127,8 +127,8 @@ MODEL_FAMILIES = {
 }
 
 # Output root
-DEFAULT_PROJECT = "runs/aben_rgb"
-DEFAULT_NAME    = "weed_rgb_v1"
+DEFAULT_PROJECT = "runs/rgb_test"
+DEFAULT_NAME    = "weed_rgb"
 
 # Project root on Transcend drive
 PROJECT_ROOT = Path(

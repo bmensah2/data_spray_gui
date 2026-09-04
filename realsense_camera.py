@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 realsense_camera.py
-ABEN Field Imaging System — Intel RealSense Depth Camera Module
+Field Imaging System — Intel RealSense Depth Camera Module
 
 Provides:
   RealSenseCamera   — producer-consumer backend (mirrors CameraPanel design)
@@ -26,7 +26,7 @@ Usage — embedded in GUI:
     panel = RealSensePanel(shared_log)
     layout.addWidget(panel.display_widget())
 
-Author : Nana  |  ABEN PhD Imaging System
+Author : Bright Mensah  |  Field Imaging System
 """
 
 import time
@@ -85,16 +85,7 @@ from gui.style import _muted
 COLOR_W_FULL, COLOR_H_FULL, COLOR_FPS_FULL = 640, 480, 30
 DEPTH_W_FULL, DEPTH_H_FULL, DEPTH_FPS_FULL = 640, 480, 30
 
-# ── Embedded mode (when msCAM also running) ──────────────────
-# USB layout (confirmed optimal 2026-04-30):
-#   Bus 02 → Realtek hub → Port 1: msCAM  (~630 MB/s)
-#   Bus 02 → Realtek hub → Port 4: nested hub → RealSense
-#   SSD moved to Bus 01 — Bus 02 is cameras only
-#
-# Bandwidth budget:
-#   msCAM        : ~630 MB/s  (continuous)
-#   RealSense 15fps: ~87 MB/s (480×270 RGB+Depth)
-#   Total        : ~717 MB/s ← within hub capacity
+# ── Embedded mode ──────────────────
 COLOR_W_EMB, COLOR_H_EMB, COLOR_FPS_EMB = 480, 270, 15
 DEPTH_W_EMB, DEPTH_H_EMB, DEPTH_FPS_EMB = 480, 270, 15
 
@@ -102,7 +93,7 @@ DEPTH_ALPHA  = 0.03    # convertScaleAbs factor for JET colormap
 DISPLAY_FPS  = 6       # GUI update rate when embedded
 SAVE_PATH    = Path("recorded_videos/realsense")
 
-# ── Structured capture / recording output (mirrors msCAM AcquisitionPanel) ──
+# ── Structured capture / recording output  ──
 CAPTURE_BASE = Path("acquired_data/realsense")   # manual + auto captures
 VIDEO_BASE   = SAVE_PATH                          # video sessions
 VIDEO_FPS_DEFAULT = 15.0
@@ -389,18 +380,7 @@ class RealSenseCamera:
 
 class _SimpleDualStreamRecorder:
     """
-    Self-contained replacement for the missing
-    core.video_recorder.MultispectralVideoRecorder, scoped to exactly
-    what this tool needs: two standard 8-bit video streams (color,
-    JET-colorized depth) via cv2.VideoWriter -- the same basic
-    approach already proven working in
-    gui/panels/acquisition_panel_rgb.py's own video recording.
-
-    Raw 16-bit depth is deliberately NOT handled by this class -- no
-    standard video codec supports 16-bit depth directly, so it's
-    saved as an independent per-frame lossless PNG sequence instead
-    (see _RealSensePanel._write_video_frame(), which already did this
-    correctly and doesn't depend on the missing modules at all).
+    Self-contained video recorder for RealSense color + depth streams.
     """
 
     def __init__(self, output_dir: Path, fps: float, resolution):
@@ -900,13 +880,12 @@ if QT_AVAILABLE:
         def _get_session_dir(self, labels: dict) -> Path:
             """
             (Re)creates/returns the session directory for the current
-            labels -- same pattern as
-            gui/panels/acquisition_panel_rgb.py's _get_session_dir():
-            a genuinely new subject/notes combination starts a fresh
-            session (new capture_count sequence); reusing the same
-            labels continues the existing session and keeps counting
-            up. Self-contained -- no external acquisition-manager
-            dependency.
+            labels. If the labels have changed since the last capture, a new
+            session directory is created. The directory structure is:
+            CAPTURE_BASE / session_id / color
+            CAPTURE_BASE / session_id / depth_colormap
+            CAPTURE_BASE / session_id / depth_raw
+            CAPTURE_BASE / session_id / metadata
             """
             key = (labels.get("subject", ""), labels.get("notes", ""))
             if (self._session_labels == key

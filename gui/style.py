@@ -1,6 +1,6 @@
 """
 gui/style.py
-ABEN Field Imaging System — Styling, Colors, Shared Widgets
+Field Imaging System — Styling, Colors, Shared Widgets
 
 All styling constants, button helpers, and small reusable
 widgets live here. Import from any panel or tab.
@@ -10,25 +10,8 @@ Usage (unchanged from earlier versions):
 
 THEMING
 -------
-This module is now backed by gui.theme_manager. The "ABEN Dark"
-theme is the default and reproduces the original look exactly — if
-no theme switch ever happens, nothing here changes.
+This module is now backed by gui.theme_manager.
 
-When the user switches themes (View > Theme), theme_manager.apply()
-calls refresh() below to update every module-level constant
-(C_*, BTN_*, STYLE) to the new theme's values, and re-paints every
-LED, registered button, and registered label/divider/section-header.
-
-NOTE on static imports: `from gui.style import BTN_GREEN` captures
-the *value at import time* and will not change on theme switch. For
-widgets that must fully re-theme (most buttons), register them with
-theme_manager instead:
-
-    from gui.theme_manager import theme_manager
-    theme_manager.register_button(my_button, "green")
-
-BTN_* constants remain useful for one-shot/disabled styling or as a
-fallback default.
 """
 
 import weakref
@@ -79,7 +62,7 @@ def refresh():
     g["STYLE"] = theme_manager.style()
 
 
-# Populate the constants above for the default ("aben_dark") theme at
+# Populate the constants above for the default ("field_dark") theme at
 # import time, so `from gui.style import BTN_GREEN, STYLE, C_TEXT, ...`
 # works exactly as before.
 refresh()
@@ -184,7 +167,7 @@ def _sec(text: str, size: int = 11) -> QLabel:
     l = QLabel(text)
 
     def _style(p):
-        if theme_manager.current == "aben_dark":
+        if theme_manager.current == "field_dark":
             color = "#00a0c0"
         else:
             color = _lighten(p["teal"], 25)

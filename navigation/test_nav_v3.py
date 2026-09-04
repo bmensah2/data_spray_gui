@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 test_nav_v3.py
-ABEN Field Imaging System — Husky Precision Navigation
+Field Imaging System — Husky Precision Navigation
 Uses a P-controller (proportional deceleration) for accurate
 stop-on-target movement regardless of max speed setting.
 
@@ -268,7 +268,7 @@ class HuskyMover:
 
 def main():
     parser = argparse.ArgumentParser(
-        description="ABEN Husky precision navigation"
+        description="Field Imaging System — Husky Precision Navigation"
     )
     parser.add_argument(
         'mode',

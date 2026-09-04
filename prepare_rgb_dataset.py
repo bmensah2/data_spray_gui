@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
 prepare_rgb_dataset.py
-ABEN Dual RGB Detection System — Dataset Preparation
+Dual RGB Detection System — Dataset Preparation
 
-Validates and prepares the RGB dataset exported by the ABEN Annotator
+Validates and prepares the RGB dataset exported by the Annotator
 for YOLOv8 training. Unlike prepare_4ch_dataset.py, almost nothing needs
 to happen here — the Annotator already exports standard YOLO-format JPEGs
 and polygon .txt labels.
@@ -36,7 +36,7 @@ Usage
         --dataset /path/to/yolo_dataset \\
         --validate-only
 
-Author : Nana | NDSU / PhD Imaging System
+Author : Bright Mensah | NDSU / Dual RGB Detection System
 Path   : /media/pagsun/Transcend/phd_project/emeet_dual_cam/
 """
 
@@ -113,7 +113,7 @@ def write_data_yaml(
 ) -> Path:
     """Write data_rgb.yaml for YOLOv8 RGB training."""
     cfg = {
-        "# ABEN YOLO dataset — RGB (eMeet dual camera)": None,
+        "# Dual RGB Detection System — RGB (eMeet dual camera)": None,
         "path":  str(dataset_dir.resolve()),
         "train": "images/train",
         "val":   "images/val",
@@ -122,7 +122,7 @@ def write_data_yaml(
     }
     # Write manually to keep comment at top
     lines = [
-        "# ABEN YOLO dataset — RGB (eMeet dual camera)",
+        "# Dual RGB Detection System — RGB (eMeet dual camera)",
         f"path:  {dataset_dir.resolve()}",
         "train: images/train",
         "val:   images/val",
@@ -175,7 +175,7 @@ def main():
         sys.exit(1)
 
     print("=" * 55)
-    print("  ABEN RGB Dataset Preparation")
+    print("  Dual RGB Dataset Preparation")
     print("=" * 55)
     print(f"\nDataset : {dataset_dir}")
     print(f"Classes : {class_names}")

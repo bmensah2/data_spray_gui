@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 capture_tool.py
-ABEN Field Detection System — Field Data Capture Tool
+Field Detection System — Field Data Capture Tool
 
 Option C capture strategy:
   - Automatic interval capture (every N seconds while running)
@@ -32,19 +32,12 @@ from pathlib import Path
 from datetime import datetime
 from typing import Optional, Dict, Tuple
 
-from core.detection_config import (
+from core.detection_config_rgb import (
     ABENConfig, DetectionMode, CameraMode, GrowthStage,
     get_weed_config, get_cls_config
 )
 
 # Optional imports — graceful degradation if hardware not present
-try:
-    from harvesters.core import Harvester
-    HARVESTER_AVAILABLE = True
-except ImportError:
-    HARVESTER_AVAILABLE = False
-    print("⚠  Harvesters not available — running in simulation mode")
-
 try:
     import pynmea2
     import serial as pyserial
@@ -218,7 +211,7 @@ class OdomBridge:
 
 class BandExtractor:
     """
-    Extracts individual spectral bands from raw Bayer-pattern msCAM frame.
+    Extracts individual spectral bands from a simulated raw Bayer-pattern frame.
     Matches the band extraction logic in existing multi_spec_v2.py.
     """
 
@@ -318,9 +311,7 @@ class CaptureTool:
         self.odom           = OdomBridge(cfg.network.odom_port)
 
         # Camera state
-        self.harvester      = None
-        self.image_acquirer = None
-        self.sim_mode       = False
+        self.sim_mode       = True
         self._last_auto_time = 0.0
 
         # Setup logging
@@ -348,32 +339,11 @@ class CaptureTool:
     # ── Camera Init ───────────────────────────────────────────
 
     def _init_camera(self) -> bool:
-        if not HARVESTER_AVAILABLE:
-            logging.warning("Running in simulation mode — no msCAM")
-            self.sim_mode = True
-            return True
-
-        try:
-            self.harvester = Harvester()
-            self.harvester.add_file(self.cfg.ms_camera.cti_path)
-            self.harvester.update()
-
-            if not self.harvester.device_info_list:
-                logging.warning("No camera found — simulation mode")
-                self.sim_mode = True
-                return True
-
-            self.image_acquirer = self.harvester.create()
-            self.image_acquirer.start()
-            logging.info("msCAM initialized ✓")
-            return True
-        except Exception as e:
-            logging.error(f"Camera init failed: {e}")
-            self.sim_mode = True
-            return True  # Fall through to sim mode
+        logging.warning("Running in simulation mode — hardware capture removed")
+        return True
 
     def _get_frame(self) -> Optional[np.ndarray]:
-        """Acquire one raw frame from msCAM or generate simulated frame."""
+        """Generate one simulated raw frame."""
         if self.sim_mode:
             # Simulate a realistic 4-pattern raw frame for testing
             h = self.cfg.ms_camera.height
@@ -384,16 +354,7 @@ class CaptureTool:
             frame = frame + (30 * np.sin(y_idx / 20)).astype(np.int16)
             return np.clip(frame, 0, 4095).astype(np.uint16)
 
-        try:
-            with self.image_acquirer.fetch(timeout=2.0) as buffer:
-                component = buffer.payload.components[0]
-                raw = component.data.reshape(
-                    component.height, component.width
-                ).copy()
-            return raw
-        except Exception as e:
-            logging.error(f"Frame fetch failed: {e}")
-            return None
+        return None
 
     # ── Quality Check ─────────────────────────────────────────
 
@@ -504,7 +465,7 @@ class CaptureTool:
 
                 # Camera info
                 'camera': {
-                    'model':        'msCAM',
+                    'model':        'simulated',
                     'width':        raw.shape[1],
                     'height':       raw.shape[0],
                     'bands':        self.cfg.ms_camera.channel_order,
@@ -691,19 +652,6 @@ class CaptureTool:
         """Clean shutdown of all hardware and save session summary."""
         logging.info("Shutting down...")
 
-        if self.image_acquirer:
-            try:
-                self.image_acquirer.stop()
-                self.image_acquirer.destroy()
-            except Exception:
-                pass
-
-        if self.harvester:
-            try:
-                self.harvester.reset()
-            except Exception:
-                pass
-
         self.gps.stop()
         self.odom.stop()
         cv2.destroyAllWindows()
@@ -757,7 +705,7 @@ def parse_args():
     )
     parser.add_argument(
         '--rgb', action='store_true',
-        help='Use RGB cameras instead of msCAM'
+        help='Use RGB camera configuration'
     )
     return parser.parse_args()
 

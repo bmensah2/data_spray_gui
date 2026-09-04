@@ -522,10 +522,10 @@ class DualCameraPanel:
 
         # Fullscreen popout / Restore
         if fullscreen_dialog is not None:
-            fs_btn = QPushButton("🗗 Restore")
+            fs_btn = QPushButton("📷 Restore")
             fs_btn.clicked.connect(fullscreen_dialog.close)
         else:
-            fs_btn = QPushButton("⛶ Fullscreen")
+            fs_btn = QPushButton("📷 Fullscreen")
             fs_btn.clicked.connect(lambda: self.open_fullscreen_view(bar.window()))
         theme_manager.register_widget(
             fs_btn, lambda p: (

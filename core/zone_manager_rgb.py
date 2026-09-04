@@ -24,7 +24,7 @@ Debounce filter (identical to validated weedbot Test_High_Focus.py):
   - counter >= threshold → spray_active = True
   - counter == 0       → spray_active = False
 
-Author : Nana | NDSU / PhD Imaging System
+Author : Bright Mensah | NDSU / Imaging System
 Path   : /media/pagsun/Transcend/phd_project/emeet_dual_cam/
 """
 
@@ -34,10 +34,10 @@ from dataclasses import dataclass, field
 from typing import List, Dict, Tuple, Optional
 
 try:
-    from core.detection_config_rgb import RGBConfig, DetectionMode
+    from core.detection_config_rgb import RGBConfig
     from core.detection_engine_rgb import Detection, InferenceResult, DualInferenceResult
 except ImportError:
-    from detection_config_rgb import RGBConfig, DetectionMode
+    from detection_config_rgb import RGBConfig
     from detection_engine_rgb import Detection, InferenceResult, DualInferenceResult
 
 

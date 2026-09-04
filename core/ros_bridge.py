@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 ros_bridge.py
-ABEN Field Detection System — ROS Bridge (Jetson Side)
+Field Detection System — ROS Bridge (Jetson Side)
 
 Runs ON THE JETSON AGX ORIN — no ROS installation required.
 
@@ -14,7 +14,7 @@ Used by:
   - event_logger.py    → logs pose at each spray event
   - actuation_controller.py → checks estop before firing nozzles
 
-Author : Nana | NDSU / PhD Imaging System
+Author : Bright Mensah | NDSU / Imaging System
 Runs on: Jetson AGX Orin 64GB
 """
 
@@ -328,8 +328,8 @@ def _test_listener():
         Pose: x=0.04, y=0.00, heading=0.1°, speed=0.45m/s, age=8ms
         ...
     """
-    from core.detection_config import ABENConfig
-    cfg = ABENConfig()
+    from core.detection_config_rgb import RGBCameraConfig
+    cfg = RGBCameraConfig()
 
     logging.basicConfig(
         level=logging.INFO,

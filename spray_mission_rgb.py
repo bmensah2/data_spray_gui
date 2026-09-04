@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-spray_mission_rgb.py
-ABEN Dual RGB Detection System — Autonomous Spray Mission
+spray_mission.py
+Dual RGB Detection System — Autonomous Spray Mission
 
 Drives the Husky robot, captures dual RGB frames from the eMeet cameras,
 runs YOLOv8n-Seg inference, and fires nozzles for all confirmed weed

@@ -1,4 +1,4 @@
-# ABEN Field Spray & Imaging System — Jetson-side requirements
+# Field Spray & Imaging System — Jetson-side requirements
 # Install with: pip install -r requirements.txt
 #
 # These are the packages actually imported by main_gui_rgb.py,

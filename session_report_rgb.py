@@ -1,18 +1,9 @@
 #!/usr/bin/env python3
 """
-session_report_rgb.py
-ABEN Dual RGB Detection System — Session Telemetry & Reporting
+session_report.py
+Dual RGB Detection System — Session Telemetry & Reporting
 
 RGB fork of session_report.py.
-
-Key differences from multispectral version:
-  - SystemConfigSnapshot: RGB camera fields (left/right device, geometry)
-    instead of spectral bands / resistance classifier fields
-  - SprayEventRecord: trigger_dist_m + spray_time_s (geometry-computed)
-    instead of resistance_prob / resistance_decision
-  - No resistance classifier breakdown in summary
-  - Dual-camera sync stats added to camera section
-  - CameraStats tracks left/right grabs separately + sync error
 
 Usage (wired into spray_mission_rgb.py):
     report = SessionReportRGB(system_config)

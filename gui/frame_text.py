@@ -1,6 +1,6 @@
 """
 gui/frame_text.py
-ABEN Field Imaging System — Theme-consistent text rendering for OpenCV overlays
+Field Imaging System — Theme-consistent text rendering for OpenCV overlays
 
 cv2.putText only supports OpenCV's built-in Hershey vector fonts, which
 render blocky/aliased at the small scales used for the HUD/zone/

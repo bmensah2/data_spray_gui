@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
 event_logger.py
-ABEN Field Detection System — Research Event Logger
+Detection System — Research Event Logger
 
-Logs every spray event with full spatial, spectral, and detection
-metadata. This is the primary research data output — every logged
+Logs every spray event with full detection metadata. 
+This is the primary research data output — every logged
 event is a publishable data point.
 
 Per-event record includes:
@@ -22,9 +22,9 @@ Per-event record includes:
 Output formats:
   - JSON lines (.jsonl) — one event per line, streamable
   - CSV summary — for direct import into R / Excel / MATLAB
-  - Session summary JSON — human-readable field report
+  - Session summary JSON — field report
 
-Author : Nana | NDSU / PhD Imaging System
+Author : Bright Mensah | NDSU / Imaging System
 """
 
 import csv

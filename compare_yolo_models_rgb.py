@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 compare_yolo_models_rgb.py
-ABEN Dual RGB Detection System — Multi-Family YOLO Comparison
+Dual RGB Detection System — Multi-Family YOLO Comparison
 
 Trains (or reuses existing) YOLOv8, YOLO11, and YOLO26 checkpoints on
 the SAME dataset with the SAME hyperparameters, evaluates each with
@@ -54,7 +54,7 @@ Before running for real, run check_yolo_env.py first -- this script
 will train three full models back to back, which is a lot of wasted
 time to discover partway through that CUDA wasn't actually being used.
 
-Author : Nana | NDSU / PhD Imaging System
+Author : Bright Mensah | NDSU / Dual RGB Detection System
 Path   : /media/pagsun/Transcend/phd_project/emeet_dual_cam/
 """
 

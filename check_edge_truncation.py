@@ -1,20 +1,12 @@
 #!/usr/bin/env python3
 """
 check_edge_truncation.py
-ABEN Dual RGB Detection System — Per-class Edge-Truncation Diagnostic
+Dual RGB Detection System — Per-class Edge-Truncation Diagnostic
 
 Checks whether one class's training annotations are disproportionately
 cut off at the image edge compared to others -- a common, purely
 structural reason a class detects worse than the rest, independent of
 label quality or how much training data it has.
-
-Motivating hypothesis (operator's field layout): sugarbeet is planted
-in rows ~22in apart; weeds are mostly inter-row, with nozzles (and
-likely camera framing) positioned/tuned to cover that inter-row space.
-If so, sugarbeet plants would tend to sit nearer the frame edges than
-inter-row weeds, which are more likely centered -- and a partially
-cut-off object is intrinsically harder for a detector to learn well,
-independent of label quality or how much training data exists for it.
 
 This reads your existing YOLO segmentation label files directly (no
 image inspection needed) -- a polygon vertex sitting at or very near
@@ -36,7 +28,7 @@ rate, and mean normalized bounding-box area (smaller = typically
 either a genuinely small/young plant, or a partially-cut-off one --
 read alongside the edge-touch rate, not alone).
 
-Author : Nana | NDSU / PhD Imaging System
+Author : Bright Mensah | NDSU / Dual RGB Detection System
 Path   : /media/pagsun/Transcend/phd_project/emeet_dual_cam/
 """
 

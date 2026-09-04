@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 plot_model_comparison.py
-ABEN Dual RGB Detection System — Model Comparison Figures
+Dual RGB Detection System — Model Comparison Figures
 
 Reads a model_comparison_rgb*.json report (written by
 compare_yolo_models_rgb.py) and generates PNG figures:
@@ -37,7 +37,7 @@ Usage
         --labels dataset1 dataset2 \\
         --out-dir figures_combined
 
-Author : Nana | NDSU / PhD Imaging System
+Author : Bright Mensah | NDSU / Dual RGB Detection System
 Path   : /media/pagsun/Transcend/phd_project/emeet_dual_cam/
 """
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 actuation_controller.py
-ABEN Field Detection System — Actuation Controller
+Detection System — Actuation Controller
 
 Translates ZoneDecision from zone_manager.py into real hardware
 commands sent through GantryController to the Arduino firmware.
@@ -25,7 +25,7 @@ Safety rules enforced here:
     this is a MINIMUM, not a fixed burst. EStop always overrides the
     floor: an emergency stop closes nozzles immediately regardless.
 
-Author : Nana | NDSU / PhD Imaging System
+Author : Bright Mensah | NDSU / Imaging System
 """
 
 import time
@@ -89,7 +89,7 @@ class SprayEvent:
 
 class ActuationController:
     """
-    Hardware actuation layer for the ABEN detection system.
+    Hardware actuation layer for the detection system.
 
     Connects zone decisions to the Arduino via GantryController.
     Enforces pump/nozzle safety sequencing and EStop handling.

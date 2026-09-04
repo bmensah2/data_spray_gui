@@ -1,18 +1,13 @@
 #!/usr/bin/env python3
 """
 evaluate_model_rgb.py
-ABEN Dual RGB Detection System — YOLO Model Validation Metrics
+Dual RGB Detection System — YOLO Model Validation Metrics
 
 RGB fork of evaluate_model.py.
 
 Computes bounding-box AP and segmentation mask AP against the labeled
 validation set produced by labelme_converter_rgb.py.
-
-Key differences from the multispectral evaluate_model.py:
-  - Uses data_rgb.yaml (not data_4ch.yaml / data_rededge.yaml)
-  - Image size: 640×640 (not 512×512)
-  - Counts .jpg/.jpeg in val dir (not .png placeholders)
-  - Output JSON feeds into generate_report.js for the final Word report
+Output JSON feeds into generate_report.js for the final Word report
 
 Usage
 -----
@@ -21,7 +16,7 @@ Usage
         --dataset /path/to/yolo_dataset/data_rgb.yaml \\
         --out     model_validation_rgb.json
 
-Author : Nana | NDSU / PhD Imaging System
+Author : Bright Mensah | NDSU / Dual RGB Detection System
 Path   : /media/pagsun/Transcend/phd_project/emeet_dual_cam/
 """
 

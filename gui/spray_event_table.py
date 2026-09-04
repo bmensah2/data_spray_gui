@@ -1,13 +1,6 @@
 """
 gui/spray_event_table.py
-ABEN Field Imaging System — Shared Live Spray Event Feed table
-
-Builds the exact "Live Spray Event Feed" QTableWidget (Time, Zone,
-Nozzle, Class, Conf, Pose, GPS columns) originally built inline in
-gui/tabs/tab_analysis_rgb.py, extracted here so both Session Analysis
-and the camera fullscreen popout (gui/panels/dual_camera_panel.py)
-build and update an identical table from one place instead of two
-copies quietly drifting apart over time.
+Field Imaging System — Shared Live Spray Event Feed table
 """
 
 import datetime

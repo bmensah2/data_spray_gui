@@ -17,10 +17,15 @@ venv/
 *.engine
 *.weights
 weights/
+models/
 runs/
 
 # Captured data / logs (large, field-generated — not source)
 data/
+training_data/
+recorded_videos/
+test/
+acquired_data/
 captures/
 logs/
 *.log

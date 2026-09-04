@@ -1,6 +1,6 @@
 """
 gui/shared_log.py
-ABEN Field Imaging System — Unified Log Widget
+Field Imaging System — Unified Log Widget
 
 Each tab gets its own UnifiedLog instance.
 Sources: GANTRY, CAMERA, DETECT, NAV, SYS, ANALYSIS

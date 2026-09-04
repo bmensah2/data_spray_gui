@@ -1,4 +1,4 @@
-# ABEN Dual RGB Field Imaging & Spray System
+# Dual RGB Field Imaging & Spray System
 
 A precision weed-detection and spray robot: a **Clearpath Husky A200**
 ground platform carrying a dual eMeet RGB camera rig, a **Jetson AGX
@@ -8,7 +8,7 @@ on the Jetson, giving a field operator live camera feeds, spray
 control, navigation, and a session analysis dashboard from one
 5-tab interface.
 
-Built for herbicide-resistance and disease (CLS) research at
+Built for weed and disease (CLS) research at
 NDSU — every spray event is logged with class, confidence, GPS, and
 robot pose for downstream analysis.
 
@@ -147,4 +147,4 @@ confidence — see
 
 ## Author
 
-Nana | NDSU / PhD Imaging System
+Bright Mensah | NDSU / Imaging System

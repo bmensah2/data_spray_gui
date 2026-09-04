@@ -100,6 +100,7 @@ class DualEMEETCamera:
 
     # ── Camera setting presets ───────────────────────────────
     PRESET_INDOOR = {
+        "autofocus":  1,
         "exposure":   300,
         "brightness": 0,
         "contrast":   57,
@@ -113,6 +114,7 @@ class DualEMEETCamera:
         "freq":       2,
     }
     PRESET_OUTDOOR = {
+        "autofocus":  1,
         "exposure":   5,
         "brightness": -10,
         "contrast":   60,
@@ -126,6 +128,7 @@ class DualEMEETCamera:
         "freq":       2,
     }
     PRESET_CLOUDY = {
+        "autofocus":  1,
         "exposure":   80,
         "brightness": 0,
         "contrast":   58,
@@ -155,7 +158,7 @@ class DualEMEETCamera:
     ):
         """
         settings       : dict of v4l2 values to apply instead of DEFAULTS.
-                         Keys: exposure, brightness, contrast, saturation,
+                         Keys: autofocus, exposure, brightness, contrast, saturation,
                                gamma, gain, sharpness, wb_temp, focus,
                                backlight, freq.
                          Pass PRESET_OUTDOOR / PRESET_CLOUDY / PRESET_INDOOR
@@ -250,10 +253,12 @@ class DualEMEETCamera:
         self._v4l2(device, "backlight_compensation", s["backlight"])
         self._v4l2(device, "power_line_frequency",   s["freq"])
 
-        # Focus — disable autofocus first, then set absolute
-        self._v4l2(device, "focus_automatic_continuous", 0)
-        time.sleep(0.1)
-        self._v4l2(device, "focus_absolute", s["focus"])
+        # Focus — autofocus is enabled by default; manual focus remains available.
+        autofocus = s.get("autofocus", 1)
+        self._v4l2(device, "focus_automatic_continuous", autofocus)
+        if not autofocus:
+            time.sleep(0.1)
+            self._v4l2(device, "focus_absolute", s["focus"])
 
         # Exposure — disable auto first, then set absolute
         self._v4l2(device, "auto_exposure", 1)

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 demo_spray.py
-ABEN Field Imaging System — Spray Demo Script
+Dual RGB Detection System — Spray Demo Script
 
 Runs on JETSON — controls both robot (via SSH) and nozzles (via Arduino).
 
@@ -11,15 +11,11 @@ Architecture:
     - Receives odometry via UDP from husky_odom_pub.py
     - Fires nozzles directly via Arduino serial (/dev/ttyACM0)
     - Applies 12-inch look-ahead logic
-    - Grabs frames from msCAM, runs YOLO inference via DetectionEngine,
-      and feeds results through ZoneManager's multi-frame debounce filter
-      to decide which nozzle to fire (real detection, not random)
+    - Runs the spray timing demo with deterministic dummy detections
 
 Usage:
     cd ~/phd_project/multispec_camera
     source ~/.venvs/hslab/bin/activate
-    python demo_spray.py --model models/weed_multispectral.pt   # real detection
-    python demo_spray.py --dist 2.0 --model models/weed_multispectral.pt
     python demo_spray.py --dummy-detect    # old random-trigger mode (no camera/model needed)
     python demo_spray.py --dry-run         # no hardware at all — log only
 """
@@ -51,37 +47,19 @@ except ImportError:
 # timing tests without the full detection stack installed.
 DETECTION_AVAILABLE = False
 try:
-    from core.detection_engine import DetectionEngine
-    from core.zone_manager import ZoneManager
-    from core.detection_config import get_weed_config, GrowthStage, CameraMode
+    from core.detection_engine_rgb import DetectionEngine
+    from core.zone_manager_rgb import ZoneManager
+    from core.detection_config_rgb import get_weed_config, GrowthStage, CameraMode
     DETECTION_AVAILABLE = True
 except ImportError:
     try:
-        from detection_engine import DetectionEngine
-        from zone_manager import ZoneManager
-        from detection_config import get_weed_config, GrowthStage, CameraMode
+        from detection_engine_rgb import DetectionEngine
+        from zone_manager_rgb import ZoneManager
+        from detection_config_rgb import get_weed_config, GrowthStage, CameraMode
         DETECTION_AVAILABLE = True
     except ImportError as e:
         print(f"[DEMO]  ⚠ Detection stack not importable ({e}) — "
               f"falling back to --dummy-detect mode only")
-
-# ── Camera (harvesters / GenICam) ─────────────────────────────
-try:
-    from harvesters.core import Harvester
-    HARVESTER_AVAILABLE = True
-except ImportError:
-    HARVESTER_AVAILABLE = False
-
-CTI_PATH = "/opt/sentech/lib/libstgentl.cti"
-
-# Matches camera_panel.py's authoritative _BAYER extraction exactly —
-# stride 4 on a native 2048x2048 sensor frame, giving 512x512 per band.
-BAYER_OFFSETS = {
-    "580nm": (0, 0),
-    "660nm": (0, 2),
-    "735nm": (2, 0),
-    "820nm": (2, 2),
-}
 
 # ── Session telemetry / reporting ─────────────────────────────
 try:
@@ -111,72 +89,6 @@ LOOK_AHEAD_M     = 0.4064      # 16 inches
 SPRAY_WINDOW_M   = 0.15        # 6 inches
 DETECT_INTERVAL  = (1.0, 2.5)  # seconds between fake detections (dummy mode only)
 STALL_TIMEOUT    = 5.0         # seconds without movement = abort
-
-
-# ─────────────────────────────────────────────────────────────
-#  MSCAM GRABBER (headless — no Qt/GUI dependency)
-# ─────────────────────────────────────────────────────────────
-class MsCamGrabber:
-    """
-    Minimal standalone GenICam frame grabber for the msCAM, used only by
-    real-detection mode. Mirrors camera_panel.py's connection and band
-    extraction exactly (same CTI path, same stride-4 BAYER_OFFSETS) so
-    inference here sees the same pixel data the model was trained on.
-
-    No display, no Qt — just connect, grab, extract bands, repeat.
-    """
-    def __init__(self):
-        self.available = False
-        self._h  = None
-        self._ia = None
-        if not HARVESTER_AVAILABLE:
-            print("[CAMERA] harvesters not installed — no live camera")
-            return
-        try:
-            self._h = Harvester()
-            self._h.add_file(CTI_PATH)
-            self._h.update()
-            if not self._h.device_info_list:
-                print("[CAMERA] No camera detected on CTI bus")
-                return
-            self._ia = self._h.create()
-            model = self._ia.remote_device.node_map.DeviceModelName.value
-            self._ia.start()
-            self.available = True
-            print(f"[CAMERA] Connected: {model}")
-        except Exception as e:
-            print(f"[CAMERA] Connection failed: {e}")
-            self.available = False
-
-    def grab_bands(self):
-        """
-        Fetch one frame and extract the 4 spectral bands.
-        Returns {'580nm': arr, '660nm': arr, '735nm': arr, '820nm': arr}
-        or None on timeout/error (caller should just retry — this is
-        expected occasionally, not a hard failure).
-        """
-        if not self.available or self._ia is None:
-            return None
-        try:
-            with self._ia.fetch(timeout=0.2) as buf:
-                comp = buf.payload.components[0]
-                raw = comp.data.reshape(comp.height, comp.width).copy()
-            return {
-                name: raw[r::4, c::4].copy()
-                for name, (r, c) in BAYER_OFFSETS.items()
-            }
-        except Exception:
-            return None
-
-    def close(self):
-        try:
-            if self._ia is not None:
-                self._ia.stop()
-                self._ia.destroy()
-            if self._h is not None:
-                self._h.reset()
-        except Exception:
-            pass
 
 
 # ─────────────────────────────────────────────────────────────
@@ -357,38 +269,14 @@ class Demo:
         # Falls back to the old random-trigger demo if either is missing,
         # rather than crashing — this script needs to stay usable for
         # pure spray-timing tests without a trained model on hand.
-        self.dummy_detect = dummy_detect or not DETECTION_AVAILABLE
+        self.dummy_detect = True
         self.engine   = None
         self.zone_mgr = None
         self.camera   = None
         self._imgsz   = imgsz
 
-        if not self.dummy_detect:
-            cfg = get_weed_config(
-                field_id="spray_demo",
-                growth_stage=GrowthStage.FOUR_LEAF,
-                camera_mode=CameraMode.MULTISPECTRAL,
-            )
-            if conf is not None:
-                cfg.model.confidence_threshold = conf
-            if device is not None:
-                cfg.model.device = device
-
-            self.engine = DetectionEngine(cfg)
-            loaded = self.engine.load(model_path)
-            if not loaded:
-                print(f"[DEMO]  ⚠ Model failed to load from "
-                      f"{model_path or cfg.model.get_model_path(cfg.session.detection_mode, cfg.session.camera_mode)} "
-                      f"— falling back to --dummy-detect mode")
-                self.dummy_detect = True
-            else:
-                self.engine._imgsz = imgsz
-                self.zone_mgr = ZoneManager(cfg)
-                self.camera = MsCamGrabber()
-                if not self.camera.available:
-                    print("[DEMO]  ⚠ No camera available — "
-                          "falling back to --dummy-detect mode")
-                    self.dummy_detect = True
+        if not dummy_detect:
+            print("[DEMO]  Live multispectral detection removed — using dummy mode")
 
         print(f"\n{'='*55}")
         print(f"  ABEN SPRAY DEMO  (runs on Jetson)")
@@ -408,8 +296,7 @@ class Demo:
         self.report = None
         if REPORT_AVAILABLE:
             cfg_snapshot = SystemConfigSnapshot(
-                camera_model=(self.camera.available and "msCAM (connected)"
-                              or "none (dummy mode)") if self.camera else "none (dummy mode)",
+                camera_model="none (dummy mode)",
                 model_path=str(model_path or "none"),
                 imgsz=imgsz,
                 confidence_threshold=(conf if conf is not None else

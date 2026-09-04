@@ -1,22 +1,15 @@
 // generate_report_rgb.js
-// ABEN Dual RGB Detection System — Final Report Assembly
+// Dual RGB Detection System — Final Report Assembly
 //
 // RGB fork of generate_report.js.
 // Combines session_rgb.json (live run telemetry from spray_mission_rgb.py),
 // model_validation_rgb.json (mAP from evaluate_model_rgb.py),
 // and chart PNGs into a polished .docx report.
 //
-// Key differences from multispec version:
-//   - No resistance classifier section
-//   - System config shows camera geometry (height, GSD, nozzle Y)
-//   - Camera section includes dual-camera sync stats
-//   - Spray section shows geometry-based timing (trigger_dist, spray_time)
-//   - Pipeline description updated for RGB
-//
 // Usage:
 //   node generate_report_rgb.js --session session_rgb.json \
 //     --validation model_validation_rgb.json --charts charts/ \
-//     --out ABEN_RGB_Report.docx
+//     --out Field_Report.docx
 
 const fs = require("fs");
 const path = require("path");
@@ -34,7 +27,7 @@ function getArg(name, def = null) {
 const sessionPath    = getArg("session");
 const validationPath = getArg("validation");
 const chartsDir      = getArg("charts", "charts");
-const outPath        = getArg("out", "ABEN_RGB_Spray_Report.docx");
+const outPath        = getArg("out", "Field_Report.docx");
 
 if (!sessionPath) {
   console.error("Usage: node generate_report_rgb.js --session session_rgb.json [--validation model_validation_rgb.json] [--charts charts/] [--out report.docx]");
@@ -169,7 +162,7 @@ const children = [];
 // --- Title page ---
 children.push(
   new Paragraph({ spacing: { before: 1600 }, alignment: AlignmentType.CENTER,
-    children: [new TextRun({ text: "ABEN Dual RGB Imaging System", bold: true, size: 56, color: COLOR_ACCENT })] }),
+    children: [new TextRun({ text: "Dual RGB Detection System", bold: true, size: 56, color: COLOR_ACCENT })] }),
   new Paragraph({ alignment: AlignmentType.CENTER, spacing: { before: 200, after: 100 },
     children: [new TextRun({ text: "Autonomous Weed Detection & Precision Spray Mission Report", size: 30 })] }),
   new Paragraph({ alignment: AlignmentType.CENTER, spacing: { before: 400 },
@@ -186,7 +179,7 @@ const missedCount = sum.spray.missed;
 const nearMisses = sum.spray.near_misses;
 children.push(p(
   `This report documents an autonomous weed detection and targeted spray mission ` +
-  `by the ABEN Dual RGB Imaging System. ` +
+  `by the Dual RGB Detection System. ` +
   `The robot traveled ${fmt(sum.robot.distance_traveled_m, 2)} m ` +
   `of a ${fmt(sum.robot.target_distance_m, 2)} m target (ended: ${sum.robot.abort_reason.replace("_", " ")}), ` +
   `processing ${sum.detection.frames_processed} frames. ` +

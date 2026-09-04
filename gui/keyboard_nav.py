@@ -1,6 +1,6 @@
 """
 gui/keyboard_nav.py
-ABEN Field Imaging System — Keyboard Navigation Controller
+Field Imaging System — Keyboard Navigation Controller
 
 Arrow key → Husky movement (hold = move, release = stop).
 Installed on MainWindow — active from any tab.

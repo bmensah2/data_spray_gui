@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 check_yolo_env.py
-ABEN Dual RGB Detection System — Training Environment Diagnostic
+Dual RGB Detection System — Training Environment Diagnostic
 
 Run this FIRST, before any real training, especially on the Jetson.
 Answers exactly the questions that are easy to get wrong on a Jetson:
@@ -12,7 +12,7 @@ Answers exactly the questions that are easy to get wrong on a Jetson:
      `pip install ultralytics` on a Jetson pulls a generic x86-built
      wheel that has NO Jetson CUDA support -- it will "work" (import
      fine) but silently run everything on CPU, which is 10-50x slower
-     for training and can turn a 2-hour training run into a 2-day one.
+     for training and can turn a 2-hour training run into a 2-days training run.
      The correct wheel comes from NVIDIA's Jetson-specific PyTorch
      builds (matched to your JetPack/L4T version), not plain PyPI.
   3. Do yolov8n-seg / yolo11n-seg / yolo26n-seg pretrained weights
@@ -28,7 +28,7 @@ Exits 0 if everything needed for training is in order, 1 otherwise,
 so it's also safe to use as a pre-flight check in a script:
     python check_yolo_env.py || exit 1
 
-Author : Nana | NDSU / PhD Imaging System
+Author : Bright Mensah | NDSU / Dual RGB Detection System
 Path   : /media/pagsun/Transcend/phd_project/emeet_dual_cam/
 """
 

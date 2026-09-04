@@ -1,1 +1,1 @@
-"""ABEN navigation scripts."""
+"""Navigation scripts."""

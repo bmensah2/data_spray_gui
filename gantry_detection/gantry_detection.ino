@@ -1,5 +1,5 @@
 // ============================================================
-//   ABEN IMAGING GANTRY — DETECTION CONTROLLER  v1.0
+//   IMAGING GANTRY — DETECTION CONTROLLER  v1.0
 //
 //   Purpose:
 //     Lightweight firmware for DETECTION MODE only.

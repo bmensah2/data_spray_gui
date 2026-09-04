@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 field_nav.py
-ABEN Field Imaging System — Autonomous Field Navigation
+Field Imaging System — Autonomous Field Navigation
 
 Executes a YAML mission file on the Husky PC.
 Supports boustrophedon (row scan) and custom waypoint patterns.
