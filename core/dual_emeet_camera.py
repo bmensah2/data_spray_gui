@@ -323,21 +323,68 @@ class DualEMEETCamera:
         logging.info("DualEMEETCamera: capture threads started")
 
     def _capture_loop(self, cap, lock, frame_attr, ts_attr, label):
-        """Per-camera capture loop — runs in its own thread."""
-        drop_count = 0
+        """
+        Per-camera capture loop — runs in its own thread.
+
+        Backs off on persistent failures instead of spinning at full
+        CPU re-attempting cap.read() as fast as possible -- confirmed
+        in practice to reach tens of millions of failed reads and log
+        lines in a single session when a camera physically disconnects
+        (errno=19 ENODEV) and nothing throttles the retry rate. Log
+        warnings are time-based (at most once per 5s) rather than
+        count-based, so log volume stays bounded regardless of how
+        fast failures happen -- a count-based "every 30 drops" throttle
+        does nothing useful once drops are happening thousands of
+        times per second.
+        """
+        drop_count            = 0
+        consecutive_failures  = 0
+        last_warn_time        = 0.0
+        device_declared_dead  = False
+
         while self._running:
             ret, frame = cap.read()
             if ret:
+                if consecutive_failures > 0:
+                    logging.info(
+                        f"DualEMEETCamera [{label}]: recovered after "
+                        f"{consecutive_failures} consecutive failed reads")
+                consecutive_failures = 0
+                device_declared_dead = False
                 with lock:
                     setattr(self, frame_attr, frame)
                     setattr(self, ts_attr, time.time())
             else:
-                drop_count += 1
-                if drop_count % 30 == 1:
+                drop_count           += 1
+                consecutive_failures += 1
+
+                now = time.time()
+                if now - last_warn_time >= 5.0:
                     logging.warning(
                         f"DualEMEETCamera [{label}]: dropped frame "
-                        f"(total drops: {drop_count})"
+                        f"(total drops: {drop_count}, "
+                        f"{consecutive_failures} consecutive)"
                     )
+                    last_warn_time = now
+
+                if consecutive_failures >= 100 and not device_declared_dead:
+                    logging.error(
+                        f"DualEMEETCamera [{label}]: {consecutive_failures} "
+                        f"consecutive failed reads -- camera appears to "
+                        f"have disconnected. Backing off retries (checking "
+                        f"every 2s) instead of spinning at full CPU. Check "
+                        f"the USB connection/power to this camera."
+                    )
+                    device_declared_dead = True
+
+                # Backoff so a genuinely dead/disconnected camera doesn't
+                # peg this thread's CPU forever. First few failures might
+                # just be a normal transient single-frame drop -- retry
+                # immediately, same as before, with no sleep at all.
+                if device_declared_dead:
+                    time.sleep(2.0)
+                elif consecutive_failures >= 10:
+                    time.sleep(0.1)
 
     # ── Public API ────────────────────────────────────────────
 
