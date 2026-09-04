@@ -10,16 +10,21 @@ Architecture:
     - Drives Husky via SSH → test_nav_v3.py
     - Receives odometry via UDP from husky_odom_pub.py
     - Fires nozzles directly via Arduino serial (/dev/ttyACM0)
-    - Applies 12-inch look-ahead logic
-    - Runs the spray timing demo with deterministic dummy detections
+    - Runs LIVE detection (dual eMeet RGB cameras + RGBDetectionEngine +
+      ZoneManagerRGB) when a model is available, or a dummy random-
+      trigger mode for spray-timing tests without camera/model
+    - Applies 16-inch look-ahead spray timing logic
 
-Usage:
-    cd ~/phd_project/multispec_camera
-    source ~/.venvs/hslab/bin/activate
-    python demo_spray.py --dummy-detect    # old random-trigger mode (no camera/model needed)
-    python demo_spray.py --dry-run         # no hardware at all — log only
+Usage (run from the project root, not from inside tools/ --
+this script imports core/, spray_mission_rgb.py, and
+session_report_rgb.py, which all live at the project root):
+    cd /media/pagsun/Transcend/phd_project/emeet_dual_cam
+    python3 tools/demo_spray.py --dummy-detect --dist 1.0   # no camera/model needed
+    python3 tools/demo_spray.py --model models/weed_rgb.pt --dist 2.0  # live detection
+    python3 tools/demo_spray.py --dry-run --dist 2.0        # no hardware at all — log only
 """
 
+import sys
 import math
 import time
 import random
@@ -31,6 +36,17 @@ import subprocess
 import logging
 import numpy as np
 from pathlib import Path
+
+# This script lives in tools/, but imports core/, spray_mission_rgb.py,
+# and session_report_rgb.py from the project root one level up. Running
+# `python3 tools/demo_spray.py` from the project root only puts tools/
+# itself on sys.path (Python adds the SCRIPT's own directory, not the
+# CWD or the project root) -- so those imports fail with "No module
+# named 'core'" etc. unless the project root is added explicitly here,
+# regardless of the current working directory the script is invoked from.
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent
+if str(_PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(_PROJECT_ROOT))
 
 # ── Arduino serial ────────────────────────────────────────────
 try:
