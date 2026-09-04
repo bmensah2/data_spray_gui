@@ -96,7 +96,8 @@ class ActuationController:
 
     Usage:
         ctrl = ActuationController(cfg, gantry_controller)
-        ctrl.start()                    # enables pump, arms system
+        ctrl.start()                    # arms system (pump stays OFF)
+        ctrl.manual_pump(True)          # separate, deliberate step
 
         # In detection loop:
         events = ctrl.actuate(decision, pose, gps)
@@ -184,9 +185,20 @@ class ActuationController:
 
     def start(self) -> bool:
         """
-        Arm the system: enable pump, start EStop monitor.
-        Must be called before actuate().
+        Arm the system: start EStop monitor. Does NOT turn the pump on
+        -- pump activation is a deliberate, separate manual action (see
+        manual_pump(), wired to the GUI's ENABLE PUMP button) so an
+        operator must explicitly choose to pressurize the pump, not
+        have it happen automatically the instant detection arms. Auto-
+        enabling the pump here used to defeat that safety gate entirely:
+        DetectionPanelRGB's own spray-decision logic already correctly
+        requires the GUI's pump_enabled flag before it will even
+        attempt a spray, but the PHYSICAL pump hardware was turning on
+        (pressurized, ready to fire) the moment ARM DETECTION was
+        clicked, regardless of whether the operator had touched the
+        pump-enable button at all.
 
+        Must be called before actuate().
         Returns True if armed successfully.
         """
         self._running = True
@@ -197,18 +209,9 @@ class ActuationController:
         )
         self._estop_thread.start()
 
-        # Enable pump
-        if not self._dry_run:
-            logging.info("Enabling pump...")
-            self.gantry.send_command("pump on")
-            time.sleep(0.5)  # let pump pressurize
-            self._pump_on = True
-        else:
-            self._pump_on = True  # simulate pump on in dry run
-
         self._armed = True
         logging.info(
-            f"ActuationController ARMED | "
+            f"ActuationController ARMED (pump OFF until manually enabled) | "
             f"mode={self._mode.value} | "
             f"dry_run={self._dry_run}"
         )
@@ -676,9 +679,19 @@ if __name__ == '__main__':
                                 on_spray_event=capture_event)
     ctrl.start()
     assert ctrl._armed
-    assert ctrl._pump_on
+    assert not ctrl._pump_on, (
+        "pump must stay OFF after start() -- arming and pump activation "
+        "are deliberately separate manual actions now (see manual_pump())"
+    )
     print(f"  Armed: {ctrl._armed} ✓")
-    print(f"  Pump: {ctrl._pump_on} ✓")
+    print(f"  Pump (before manual enable): {ctrl._pump_on} ✓  (correctly OFF)")
+
+    # This test exercises the full spray-trigger pipeline below, which
+    # requires the pump manually enabled first -- matching what the GUI's
+    # ENABLE PUMP button does, not something start()/arming does for you.
+    ctrl.manual_pump(True)
+    assert ctrl._pump_on
+    print(f"  Pump (after manual_pump(True)): {ctrl._pump_on} ✓")
 
     # Simulate 4 frames with kochia in Zone A (left camera)
     det_a = Detection(class_id=1, class_name='kochia',
