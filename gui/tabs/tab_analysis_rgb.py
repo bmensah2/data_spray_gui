@@ -521,33 +521,51 @@ class AnalysisTabRGB(QWidget):
     # ── Shared image renderer ─────────────────────────────────
 
     def _show(self, lbl, arr):
+        """
+        Render a numpy canvas into a QLabel as a scaled pixmap.
+
+        Deliberately does NOT skip when the label is hidden. This used
+        to begin with `if not lbl.isVisible(): return`, which meant
+        every redraw triggered while the operator was on a different
+        tab (i.e. essentially all of them, since spray events arrive
+        while watching the Detection tab) was silently dropped,
+        leaving the map permanently blank. Building a pixmap is cheap
+        relative to the detection pipeline already running, and
+        drawing unconditionally means the map is always current the
+        moment the tab is looked at -- no dependence on when a redraw
+        happened to be triggered relative to tab switches.
+
+        A hidden or not-yet-laid-out label can report a zero/invalid
+        size(), which would make scaled() produce a null pixmap, so
+        fall back to the canvas's own dimensions in that case rather
+        than silently storing nothing.
+        """
         try:
-            if not lbl.isVisible():
-                return
             h, w = arr.shape[:2]
             arr  = np.ascontiguousarray(arr)
             q    = QImage(arr.tobytes(), w, h, w * 3, QImage.Format_RGB888)
+            pm   = QPixmap.fromImage(q)
+
+            target = lbl.size()
+            if target.width() <= 0 or target.height() <= 0:
+                target = pm.size()
+
             lbl.setPixmap(
-                QPixmap.fromImage(q).scaled(
-                    lbl.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation))
+                pm.scaled(target, Qt.KeepAspectRatio,
+                          Qt.SmoothTransformation))
         except Exception:
             pass
 
     def showEvent(self, event):
         """
-        Redraw the spray map whenever this tab becomes visible.
+        Redraw the map when this tab becomes visible.
 
-        _show() deliberately skips drawing when its target label isn't
-        visible (a sensible optimization -- no point building pixmaps
-        for a hidden tab). But spray events almost always arrive while
-        the operator is on the DETECTION tab watching the live feed,
-        not sitting on this one, so every _redraw_map() call triggered
-        by an incoming event returned early without drawing. Nothing
-        re-ran it on tab switch, so the map stayed permanently blank
-        even with a full event feed and valid pose data right next to
-        it. The event TABLE didn't have this problem because
-        QTableWidget.insertRow() works fine on a hidden widget --
-        only this canvas-to-pixmap path is visibility-gated.
+        With _show()'s visibility guard removed, the map already stays
+        current while hidden -- this is now about SIZING rather than
+        content: a hidden/not-yet-laid-out label reports no usable
+        size(), so _show() falls back to the canvas's own dimensions.
+        Redrawing once the tab is actually visible re-scales the
+        pixmap to the label's real, laid-out size.
         """
         super().showEvent(event)
         self._redraw_map()
