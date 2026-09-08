@@ -145,6 +145,14 @@ def _read_v4l2_settings(device: str) -> dict:
         "sharpness":  "sharpness",
         "wb_temp":    "white_balance_temperature",
         "focus":      "focus_absolute",
+        # The AUTO-mode flags matter as much as the absolute values --
+        # without reading these back, a mission would inherit the
+        # operator's exposure/WB/focus numbers but still force auto WB
+        # and auto exposure off, overriding whatever mode the camera
+        # was actually running in when detection was working well.
+        "auto_wb":       "white_balance_automatic",
+        "auto_exposure": "auto_exposure",
+        "autofocus":     "focus_automatic_continuous",
     }
     settings = {}
     for key, ctrl in controls.items():
@@ -187,6 +195,10 @@ class RGBCameraGrabber:
                       f"exp={current.get('exposure','?')}  "
                       f"gamma={current.get('gamma','?')}  "
                       f"wb={current.get('wb_temp','?')}")
+                print(f"[CAMERA] Auto modes inherited from GUI: "
+                      f"auto_wb={current.get('auto_wb','?')}  "
+                      f"auto_exposure={current.get('auto_exposure','?')}  "
+                      f"autofocus={current.get('autofocus','?')}")
                 # Pass to DualEMEETCamera so it doesn't reset to defaults
                 self._cam = DualEMEETCamera(settings=current)
             else:

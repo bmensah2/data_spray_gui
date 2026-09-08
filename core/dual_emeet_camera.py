@@ -101,6 +101,8 @@ class DualEMEETCamera:
     # ── Camera setting presets ───────────────────────────────
     PRESET_INDOOR = {
         "autofocus":  1,
+        "auto_wb":    0,   # 0 = manual WB (use wb_temp), 1 = auto WB
+        "auto_exposure": 1,  # 1 = manual (use exposure), 3 = auto
         "exposure":   300,
         "brightness": 0,
         "contrast":   57,
@@ -115,6 +117,8 @@ class DualEMEETCamera:
     }
     PRESET_OUTDOOR = {
         "autofocus":  1,
+        "auto_wb":    0,   # 0 = manual WB (use wb_temp), 1 = auto WB
+        "auto_exposure": 1,  # 1 = manual (use exposure), 3 = auto
         "exposure":   5,
         "brightness": -10,
         "contrast":   60,
@@ -129,6 +133,8 @@ class DualEMEETCamera:
     }
     PRESET_CLOUDY = {
         "autofocus":  1,
+        "auto_wb":    0,   # 0 = manual WB (use wb_temp), 1 = auto WB
+        "auto_exposure": 1,  # 1 = manual (use exposure), 3 = auto
         "exposure":   80,
         "brightness": 0,
         "contrast":   58,
@@ -260,15 +266,29 @@ class DualEMEETCamera:
             time.sleep(0.1)
             self._v4l2(device, "focus_absolute", s["focus"])
 
-        # Exposure — disable auto first, then set absolute
-        self._v4l2(device, "auto_exposure", 1)
-        time.sleep(0.1)
-        self._v4l2(device, "exposure_time_absolute", s["exposure"])
+        # Exposure — auto_exposure is a MODE enum on UVC cameras, not a
+        # boolean: 1 = manual, 3 = aperture-priority (auto). Only push an
+        # absolute exposure when actually in manual mode; setting
+        # exposure_time_absolute while auto is active is either ignored or
+        # fights the camera's own metering.
+        auto_exp = s.get("auto_exposure", 1)
+        self._v4l2(device, "auto_exposure", auto_exp)
+        if auto_exp == 1:
+            time.sleep(0.1)
+            self._v4l2(device, "exposure_time_absolute", s["exposure"])
 
-        # White balance — disable auto first, then set temperature
-        self._v4l2(device, "white_balance_automatic", 0)
-        time.sleep(0.1)
-        self._v4l2(device, "white_balance_temperature", s["wb_temp"])
+        # White balance — same idea: only force a fixed temperature when
+        # auto WB is off. This used to hardcode white_balance_automatic=0
+        # unconditionally, which silently overrode auto WB every time a
+        # camera was opened -- including when spray_mission_rgb.py starts
+        # its own camera session for a mission run, undoing whatever the
+        # operator had set up (and detection quality depends heavily on
+        # this in variable outdoor lighting).
+        auto_wb = s.get("auto_wb", 0)
+        self._v4l2(device, "white_balance_automatic", auto_wb)
+        if not auto_wb:
+            time.sleep(0.1)
+            self._v4l2(device, "white_balance_temperature", s["wb_temp"])
 
     # ── VideoCapture setup ────────────────────────────────────
 
