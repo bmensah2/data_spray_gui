@@ -533,6 +533,25 @@ class AnalysisTabRGB(QWidget):
         except Exception:
             pass
 
+    def showEvent(self, event):
+        """
+        Redraw the spray map whenever this tab becomes visible.
+
+        _show() deliberately skips drawing when its target label isn't
+        visible (a sensible optimization -- no point building pixmaps
+        for a hidden tab). But spray events almost always arrive while
+        the operator is on the DETECTION tab watching the live feed,
+        not sitting on this one, so every _redraw_map() call triggered
+        by an incoming event returned early without drawing. Nothing
+        re-ran it on tab switch, so the map stayed permanently blank
+        even with a full event feed and valid pose data right next to
+        it. The event TABLE didn't have this problem because
+        QTableWidget.insertRow() works fine on a hidden widget --
+        only this canvas-to-pixmap path is visibility-gated.
+        """
+        super().showEvent(event)
+        self._redraw_map()
+
     # ── Cleanup ───────────────────────────────────────────────
 
     def cleanup(self):
