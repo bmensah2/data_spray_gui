@@ -222,6 +222,15 @@ class DetectionPanelRGB(QWidget):
         self._fps         = 0.0
         self._last_t      = 0.0
         self._events      = 0
+        # Full-session SprayEvent history, mirroring AnalysisTabRGB's
+        # own self._events list -- exists specifically so a widget
+        # that starts listening to spray_event_signal PARTWAY through
+        # a session (like the fullscreen popout, opened on demand
+        # rather than at app launch) can backfill what already
+        # happened instead of starting blank. Uncapped, same as
+        # AnalysisTabRGB's copy -- a session's event count is small
+        # enough that this isn't a memory concern.
+        self._events_history = []
         # 3 distance-buffered zones: N1, N2, N3
         self._dist_zones  = [DistanceBufferedZone() for _ in range(3)]
         self._purge            = False
@@ -1140,6 +1149,7 @@ class DetectionPanelRGB(QWidget):
 
     def _on_spray_event(self, event):
         self._events += 1
+        self._events_history.append(event)
         names = [d["class_name"] for d in event.detections]
         conf  = max(
             (d["confidence"] for d in event.detections),

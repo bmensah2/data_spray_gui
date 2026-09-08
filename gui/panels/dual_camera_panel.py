@@ -712,6 +712,20 @@ class DualCameraPanel:
             events_table.setMaximumHeight(220)
             eg_lay.addWidget(events_table)
 
+            # Backfill with whatever already happened this session --
+            # this dialog is opened on demand (unlike the always-open
+            # Detection tab / Session Analysis tables, which have been
+            # subscribed since app launch and so naturally accumulate
+            # everything), so without this the table would start
+            # completely empty even if the Status table right above it
+            # already shows a real, non-zero Events count. Insert in
+            # chronological order so insert_spray_event_row's
+            # newest-first convention ends up correct after all of
+            # them are in.
+            history = getattr(self.spray_event_source, "_events_history", [])
+            for past_event in history:
+                insert_spray_event_row(events_table, past_event)
+
             def _on_spray_event(event, tbl=events_table):
                 try:
                     insert_spray_event_row(tbl, event)
