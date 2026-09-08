@@ -399,8 +399,37 @@ class ActuationController:
                     )
 
             # ── Generate SprayEvents for new triggers ─────────
-            for zone_id in decision.new_triggers:
-                zone = decision.zones[zone_id]
+            # decision.new_triggers holds NOZZLE indices (0..2 for
+            # N1/N2/N3), not zone indices -- see detection_panel_rgb.py,
+            # which builds it from its 3-element spray_states list.
+            # decision.zones is a FOUR-element list (ZoneA, ZoneB1,
+            # ZoneB2, ZoneC), so indexing it directly with a nozzle
+            # index is wrong for anything past N2:
+            #     nozzle 0 -> zones[0] = ZoneA   (correct by coincidence)
+            #     nozzle 1 -> zones[1] = ZoneB1  (correct by coincidence)
+            #     nozzle 2 -> zones[2] = ZoneB2  (WRONG -- should be ZoneC)
+            # The physical nozzle still fired correctly (that path uses
+            # nozzle_id properly), but the EVENT RECORD was built from
+            # the wrong zone -- reporting ZoneB2/N2 for what was really
+            # a ZoneC/N3 spray, and pulling detections from a zone that
+            # usually had none, which is why those rows logged an empty
+            # class and 0.00 confidence.
+            # Resolve nozzle -> zone by searching for the triggering
+            # zone rather than assuming index alignment. N2 is shared
+            # by ZoneB1 and ZoneB2, so prefer whichever actually has
+            # detections this frame; fall back to the first zone
+            # mapped to that nozzle.
+            for nozzle_id in decision.new_triggers:
+                candidates = [z for z in decision.zones
+                              if z.nozzle_id == nozzle_id]
+                if not candidates:
+                    logging.warning(
+                        f"actuate(): no zone maps to nozzle {nozzle_id} -- "
+                        f"skipping event record for this trigger")
+                    continue
+                zone = next(
+                    (z for z in candidates if z.current_detections),
+                    candidates[0])
                 event = self._make_event(zone, pose, gps)
                 new_events.append(event)
                 self._total_events += 1
