@@ -37,3 +37,7 @@ logs/
 
 # Local calibration/session artifacts
 *.session
+
+# User-specific camera preset overrides (factory defaults live in
+# core/dual_emeet_camera.py; this file only holds operator edits)
+camera_presets.json

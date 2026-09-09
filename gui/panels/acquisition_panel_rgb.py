@@ -328,6 +328,21 @@ class CameraSettingsWidget(QWidget):
         btn_indoor.clicked.connect(self._preset_indoor)
         preset_row.addWidget(btn_indoor)
 
+        btn_edit_presets = QPushButton("⚙  Edit Presets")
+        theme_manager.register_widget(
+            btn_edit_presets, lambda p: (
+                f"QPushButton{{background:{p['bg2']};color:{p['muted']};"
+                f"border:1px solid {p['border2']};border-radius:4px;"
+                f"padding:5px 10px;font-family:'Noto Sans',Arial,sans-serif;"
+                f"font-size:10px;}}"
+                f"QPushButton:hover{{background:{p['btn_hover']};"
+                f"color:{p['text']};}}"))
+        btn_edit_presets.setToolTip(
+            "View, edit and save the three lighting presets.\n"
+            "Factory defaults are always recoverable.")
+        btn_edit_presets.clicked.connect(self._open_preset_editor)
+        preset_row.addWidget(btn_edit_presets)
+
         preset_row.addStretch()
         lay.addLayout(preset_row)
         lay.addStretch()
@@ -370,31 +385,62 @@ class CameraSettingsWidget(QWidget):
             "CAMERA", f"Preset applied: {name}", "ok")
 
     def _preset_outdoor(self):
-        """Outdoor / direct sunlight — exposure=5."""
-        try:
-            from core.dual_emeet_camera import DualEMEETCamera
-        except ImportError:
-            from core.dual_emeet_camera import DualEMEETCamera
-        self._apply_preset(DualEMEETCamera.PRESET_OUTDOOR,
-                           "Outdoor / Field (exp=5)")
+        """Outdoor / direct sunlight."""
+        self._apply_named_preset("outdoor")
 
     def _preset_cloudy(self):
-        """Overcast / cloudy / shade — exposure=80."""
-        try:
-            from core.dual_emeet_camera import DualEMEETCamera
-        except ImportError:
-            from core.dual_emeet_camera import DualEMEETCamera
-        self._apply_preset(DualEMEETCamera.PRESET_CLOUDY,
-                           "Cloudy / Shade (exp=80)")
+        """Overcast / cloudy / shade."""
+        self._apply_named_preset("cloudy")
 
     def _preset_indoor(self):
-        """Indoor lab — exposure=300 (factory default)."""
-        try:
-            from core.dual_emeet_camera import DualEMEETCamera
-        except ImportError:
-            from core.dual_emeet_camera import DualEMEETCamera
-        self._apply_preset(DualEMEETCamera.PRESET_INDOOR,
-                           "Indoor / Lab (exp=300)")
+        """Indoor lab."""
+        self._apply_named_preset("indoor")
+
+    def _apply_named_preset(self, name: str):
+        """
+        Apply a preset by name, loading USER-SAVED values where they
+        exist and falling back to factory defaults otherwise (see
+        core/camera_presets.py). Previously these read the hardcoded
+        DualEMEETCamera.PRESET_* dicts directly, so any tuning the
+        operator did was lost the moment they clicked a preset button.
+        """
+        from core import camera_presets as cp
+        presets = cp.load_presets()
+        settings = presets.get(name, {})
+        label = cp.DISPLAY_NAMES.get(name, name)
+        if cp.is_customized(name):
+            label += " (customized)"
+        self._apply_preset(settings, label)
+
+    def _open_preset_editor(self):
+        """Open the preset editor dialog."""
+        from gui.preset_editor import PresetEditorDialog
+        dlg = PresetEditorDialog(
+            parent=self, read_current_fn=self._read_current_settings)
+        dlg.exec_()
+
+    def _read_current_settings(self) -> dict:
+        """
+        Read the camera's CURRENT v4l2 values, keyed to match
+        camera_presets' setting keys, for the editor's "save current
+        camera settings" button. Reuses this panel's own spinboxes
+        (already kept in sync with the camera by _refresh_all()),
+        rather than shelling out to v4l2-ctl again.
+        """
+        return {
+            "exposure":      self.spn_exposure.value(),
+            "brightness":    self.spn_brightness.value(),
+            "contrast":      self.spn_contrast.value(),
+            "saturation":    self.spn_saturation.value(),
+            "gamma":         self.spn_gamma.value(),
+            "gain":          self.spn_gain.value(),
+            "sharpness":     self.spn_sharpness.value(),
+            "wb_temp":       self.spn_wb_temp.value(),
+            "focus":         self.spn_focus.value(),
+            "autofocus":     1 if self.chk_autofocus.isChecked() else 0,
+            "auto_wb":       1 if self.chk_auto_wb.isChecked() else 0,
+            "auto_exposure": 3 if self.chk_auto_exp.isChecked() else 1,
+        }
 
     # ── Read from camera ──────────────────────────────────────
 
