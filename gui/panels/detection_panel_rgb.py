@@ -231,6 +231,12 @@ class DetectionPanelRGB(QWidget):
         # AnalysisTabRGB's copy -- a session's event count is small
         # enough that this isn't a memory concern.
         self._events_history = []
+        # Session provenance + operator-entered metadata, captured at
+        # ARM and consumed by the session report.
+        self._provenance   = {}
+        self._session_meta = {}
+        self._session_id    = None
+        self._session_start = None
         # 3 distance-buffered zones: N1, N2, N3
         self._dist_zones  = [DistanceBufferedZone() for _ in range(3)]
         self._purge            = False
@@ -553,12 +559,65 @@ class DetectionPanelRGB(QWidget):
     def _det_start(self):
         if not DETECTION_AVAILABLE or self._armed:
             return
+
+        # Prompt for session provenance BEFORE arming anything, so the
+        # metadata is applied to the config the whole session is built
+        # from (and so Cancel is a genuine "don't arm", not a
+        # half-armed state). Every spray event, log file and the
+        # session report carry these values -- previously they were
+        # hardcoded config defaults (operator/researcher both "nana"),
+        # which is misleading in a publication record.
+        from gui.session_metadata_dialog import SessionMetadataDialog
+        from PyQt5.QtWidgets import QDialog as _QDialog
+
+        meta_dlg = SessionMetadataDialog(
+            parent=self,
+            detection_mode=self.cmb_mode.currentText().lower())
+        if meta_dlg.exec_() != _QDialog.Accepted:
+            self.shared_log.log(
+                "DETECT", "Arm cancelled — no session started", "info")
+            return
+        self._session_meta = meta_dlg.metadata()
+
         self._armed = True
         cfg         = self._build_cfg()
         self._cfg   = cfg
 
+        # Apply operator-entered metadata over the config defaults
+        m = self._session_meta
+        cfg.session.operator     = m["operator"]     or cfg.session.operator
+        cfg.session.researcher   = m["researcher"]   or cfg.session.researcher
+        cfg.session.institution  = m["institution"]  or cfg.session.institution
+        cfg.session.field_id     = m["field_id"]     or cfg.session.field_id
+        cfg.session.location     = m["location"]     or cfg.session.location
+        cfg.session.crop         = m["crop"]         or cfg.session.crop
+        cfg.session.notes        = m["notes"]
+        try:
+            from core.detection_config_rgb import GrowthStage
+            cfg.session.growth_stage = GrowthStage(m["growth_stage"])
+        except Exception:
+            pass   # keep the config default if the value is unrecognized
+
         self._engine = RGBDetectionEngine(cfg)
         self._zones  = ZoneManagerRGB(cfg)
+
+        # Capture full system provenance now that the engine is loaded
+        # (its class list is authoritative -- config defaults can drift
+        # from what a checkpoint was actually trained on). Best-effort:
+        # each section degrades independently, so a missing v4l2-ctl or
+        # git binary can never prevent arming.
+        try:
+            from core.session_provenance import capture_full_provenance
+            # Device paths live in acquisition_panel_rgb, not the camera
+            # module (verified, not assumed).
+            from gui.panels.acquisition_panel_rgb import (
+                LEFT_DEVICE, RIGHT_DEVICE)
+            self._provenance = capture_full_provenance(
+                cfg, engine=self._engine,
+                left_device=LEFT_DEVICE, right_device=RIGHT_DEVICE)
+        except Exception as e:
+            logging.warning(f"provenance capture failed: {e}")
+            self._provenance = {"error": str(e)}
 
         # Update model label to reflect actual loaded state
         if self._engine.stub_mode:
@@ -594,6 +653,8 @@ class DetectionPanelRGB(QWidget):
             f"gui_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}"
             f"_{cfg.session.detection_mode.value}"
         )
+        self._session_id    = session_id
+        self._session_start = time.time()
         self.session_started.emit(session_id)
 
         # EventLogger — real per-event research record (JSONL/CSV/
@@ -725,6 +786,17 @@ class DetectionPanelRGB(QWidget):
                     f"EventLogger.stop() failed: {e}", exc_info=True)
             self._logger = None
 
+        # Write the full session report (events + provenance) alongside
+        # the event logs. Wrapped so a report failure can never prevent
+        # a clean disarm -- stopping detection safely matters more than
+        # producing a document.
+        try:
+            self._write_session_report()
+        except Exception as e:
+            self.shared_log.log(
+                "DETECT", f"⚠ Session report failed: {e}", "error")
+            logging.error(f"session report failed: {e}", exc_info=True)
+
         if self._zones:
             self._zones.reset()
 
@@ -735,6 +807,57 @@ class DetectionPanelRGB(QWidget):
         self._engine = None
         self._zones  = None
         self.shared_log.log("DETECT", "Detection stopped", "info")
+
+    def _write_session_report(self):
+        """
+        Build and write the full session report (spray events +
+        provenance) for the session that just ended. Reads the same
+        _events_history the Session Analysis tab and the fullscreen
+        feed use, so the report can never disagree with what the
+        operator saw on screen.
+        """
+        if not self._session_id:
+            return   # never armed, or already written
+
+        from core.gui_session_report import (
+            build_session_report, write_session_report,
+            format_console_summary)
+
+        report = build_session_report(
+            session_id   = self._session_id,
+            events       = self._events_history,
+            provenance   = self._provenance,
+            session_meta = self._session_meta,
+            started_at   = self._session_start,
+            ended_at     = time.time(),
+        )
+
+        out_dir = Path("logs/sessions")
+        try:
+            if self._cfg is not None:
+                out_dir = Path(self._cfg.logging.base_dir) / "sessions"
+        except Exception:
+            pass
+        out_path = out_dir / f"{self._session_id}_report.json"
+
+        if write_session_report(out_path, report):
+            n = report["statistics"].get("total_events", 0)
+            self.shared_log.log(
+                "DETECT",
+                f"Session report written — {n} event(s) → {out_path.name}",
+                "ok")
+            # Surface degradation warnings where the operator will
+            # actually see them, rather than burying them in the JSON.
+            for w in report.get("warnings", []):
+                self.shared_log.log("DETECT", f"⚠ {w}", "warn")
+            logging.info("\n" + format_console_summary(report))
+        else:
+            self.shared_log.log(
+                "DETECT",
+                f"⚠ Could not write session report to {out_path}", "error")
+
+        self._session_id    = None
+        self._session_start = None
 
     def _det_estop(self):
         """Emergency stop — cuts actuation immediately."""

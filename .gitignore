@@ -41,3 +41,6 @@ logs/
 # User-specific camera preset overrides (factory defaults live in
 # core/dual_emeet_camera.py; this file only holds operator edits)
 camera_presets.json
+
+# Per-operator session metadata (last-used values for the ARM prompt)
+session_metadata.json
