@@ -124,16 +124,20 @@ def _v4l2_get(device: str, control: str):
 
 class CameraSettingsWidget(QWidget):
     """
-    Settings panel for ONE eMeet camera via v4l2-ctl.
-    Instantiated twice — once for LEFT, once for RIGHT.
+    Universal camera settings panel -- ONE set of controls applied to
+    ALL cameras (LEFT + RIGHT) together via v4l2-ctl, not two
+    independent per-camera panels that could drift apart. Previously
+    instantiated twice (once per camera) with a manual "Copy LEFT
+    settings -> RIGHT" button as the only thing keeping them in sync;
+    operator asked for a genuinely unified control instead -- there
+    should be no such thing as "left settings" and "right settings"
+    to keep in sync in the first place.
     All controls mirror the validated settings from dual_emeet_camera.py.
     """
 
-    def __init__(self, device: str, label: str,
-                 shared_log: UnifiedLog, parent=None):
+    def __init__(self, devices: list, shared_log: UnifiedLog, parent=None):
         super().__init__(parent)
-        self.device     = device
-        self.label      = label   # "LEFT" or "RIGHT"
+        self.devices    = list(devices)   # e.g. [LEFT_DEVICE, RIGHT_DEVICE]
         self.shared_log = shared_log
         self._build_ui()
 
@@ -142,7 +146,10 @@ class CameraSettingsWidget(QWidget):
         lay.setContentsMargins(8, 8, 8, 8)
         lay.setSpacing(6)
 
-        lay.addWidget(_sec(f"{self.label}  —  {self.device.split('/')[-1][:32]}"))
+        dev_names = " + ".join(d.split("/")[-1][:28] for d in self.devices)
+        lay.addWidget(_sec(f"Camera Settings  —  applies to both cameras"))
+        subtitle = _muted(dev_names)
+        lay.addWidget(subtitle)
         lay.addWidget(_divider())
 
         # ── Focus ─────────────────────────────────────────────
@@ -445,7 +452,16 @@ class CameraSettingsWidget(QWidget):
     # ── Read from camera ──────────────────────────────────────
 
     def _refresh_all(self):
-        """Read current v4l2 values and populate UI."""
+        """
+        Read current v4l2 values and populate the UI. Reads from the
+        first camera in self.devices as the representative source --
+        two live devices can't populate one set of spinboxes at once,
+        and after _apply_all() both cameras should carry the same
+        values anyway. If they've drifted (e.g. someone changed one
+        camera outside this GUI), this will show that first camera's
+        values; Apply afterward re-synchronizes both.
+        """
+        source_device = self.devices[0]
         controls_map = {
             "focus_absolute":          self.spn_focus,
             "exposure_time_absolute":  self.spn_exposure,
@@ -461,7 +477,7 @@ class CameraSettingsWidget(QWidget):
         }
         errors = []
         for ctrl, spn in controls_map.items():
-            val = _v4l2_get(self.device, ctrl)
+            val = _v4l2_get(source_device, ctrl)
             if val is not None:
                 spn.blockSignals(True)
                 spn.setValue(val)
@@ -470,14 +486,14 @@ class CameraSettingsWidget(QWidget):
                 errors.append(ctrl)
 
         # Bool controls
-        af = _v4l2_get(self.device, "focus_automatic_continuous")
+        af = _v4l2_get(source_device, "focus_automatic_continuous")
         if af is not None:
             self.chk_autofocus.blockSignals(True)
             self.chk_autofocus.setChecked(bool(af))
             self.chk_autofocus.blockSignals(False)
             self.spn_focus.setEnabled(not bool(af))
 
-        ae = _v4l2_get(self.device, "auto_exposure")
+        ae = _v4l2_get(source_device, "auto_exposure")
         if ae is not None:
             # auto_exposure: 1=manual, 3=auto (v4l2 convention)
             is_auto = (ae == 3)
@@ -486,19 +502,19 @@ class CameraSettingsWidget(QWidget):
             self.chk_auto_exp.blockSignals(False)
             self.spn_exposure.setEnabled(not is_auto)
 
-        awb = _v4l2_get(self.device, "white_balance_automatic")
+        awb = _v4l2_get(source_device, "white_balance_automatic")
         if awb is not None:
             self.chk_auto_wb.blockSignals(True)
             self.chk_auto_wb.setChecked(bool(awb))
             self.chk_auto_wb.blockSignals(False)
             self.spn_wb_temp.setEnabled(not bool(awb))
 
-        freq = _v4l2_get(self.device, "power_line_frequency")
+        freq = _v4l2_get(source_device, "power_line_frequency")
         if freq is not None:
             self.cmb_freq.setCurrentIndex(
                 min(freq, self.cmb_freq.count() - 1))
 
-        msg = f"{self.label}: settings read"
+        msg = "Camera settings read"
         if errors:
             msg += f" (skipped: {', '.join(errors[:3])})"
         self.shared_log.log("CAMERA", msg,
@@ -507,53 +523,59 @@ class CameraSettingsWidget(QWidget):
     # ── Apply to camera ───────────────────────────────────────
 
     def _apply_all(self):
-        """Write all UI values to camera via v4l2-ctl."""
-        errors = []
+        """Write all UI values to BOTH cameras via v4l2-ctl."""
+        errors_by_device = {}
 
-        def _set(ctrl, value):
-            if not _v4l2_set(self.device, ctrl, value):
-                errors.append(ctrl)
+        def _set(device, ctrl, value):
+            if not _v4l2_set(device, ctrl, value):
+                errors_by_device.setdefault(device, []).append(ctrl)
 
-        # Focus
-        af = 1 if self.chk_autofocus.isChecked() else 0
-        _set("focus_automatic_continuous", af)
-        if not af:
-            time.sleep(0.05)
-            _set("focus_absolute", self.spn_focus.value())
+        for device in self.devices:
+            # Focus
+            af = 1 if self.chk_autofocus.isChecked() else 0
+            _set(device, "focus_automatic_continuous", af)
+            if not af:
+                time.sleep(0.05)
+                _set(device, "focus_absolute", self.spn_focus.value())
 
-        # Exposure
-        if self.chk_auto_exp.isChecked():
-            _set("auto_exposure", 3)   # 3=auto
+            # Exposure
+            if self.chk_auto_exp.isChecked():
+                _set(device, "auto_exposure", 3)   # 3=auto
+            else:
+                _set(device, "auto_exposure", 1)   # 1=manual
+                time.sleep(0.05)
+                _set(device, "exposure_time_absolute",
+                    self.spn_exposure.value())
+
+            # White balance
+            awb = 1 if self.chk_auto_wb.isChecked() else 0
+            _set(device, "white_balance_automatic", awb)
+            if not awb:
+                time.sleep(0.05)
+                _set(device, "white_balance_temperature",
+                     self.spn_wb_temp.value())
+
+            # Image controls
+            _set(device, "brightness",           self.spn_brightness.value())
+            _set(device, "contrast",             self.spn_contrast.value())
+            _set(device, "saturation",           self.spn_saturation.value())
+            _set(device, "hue",                  self.spn_hue.value())
+            _set(device, "gamma",                self.spn_gamma.value())
+            _set(device, "gain",                 self.spn_gain.value())
+            _set(device, "sharpness",            self.spn_sharpness.value())
+            _set(device, "backlight_compensation", self.spn_backlight.value())
+            _set(device, "power_line_frequency",
+                 self.cmb_freq.currentIndex())
+
+        if not errors_by_device:
+            msg = "Settings applied to both cameras"
+            level = "ok"
         else:
-            _set("auto_exposure", 1)   # 1=manual
-            time.sleep(0.05)
-            _set("exposure_time_absolute", self.spn_exposure.value())
-
-        # White balance
-        awb = 1 if self.chk_auto_wb.isChecked() else 0
-        _set("white_balance_automatic", awb)
-        if not awb:
-            time.sleep(0.05)
-            _set("white_balance_temperature",
-                 self.spn_wb_temp.value())
-
-        # Image controls
-        _set("brightness",           self.spn_brightness.value())
-        _set("contrast",             self.spn_contrast.value())
-        _set("saturation",           self.spn_saturation.value())
-        _set("hue",                  self.spn_hue.value())
-        _set("gamma",                self.spn_gamma.value())
-        _set("gain",                 self.spn_gain.value())
-        _set("sharpness",            self.spn_sharpness.value())
-        _set("backlight_compensation", self.spn_backlight.value())
-        _set("power_line_frequency",
-             self.cmb_freq.currentIndex())
-
-        msg = f"{self.label}: settings applied"
-        if errors:
-            msg += f" (failed: {', '.join(errors[:4])})"
-        self.shared_log.log("CAMERA", msg,
-                            "ok" if not errors else "warn")
+            parts = [f"{dev.split('/')[-1][:16]}: {len(ctrls)} failed"
+                     for dev, ctrls in errors_by_device.items()]
+            msg = "Settings applied with errors — " + "; ".join(parts)
+            level = "warn"
+        self.shared_log.log("CAMERA", msg, level)
 
     # ── Reset to validated defaults ───────────────────────────
 
@@ -575,9 +597,7 @@ class CameraSettingsWidget(QWidget):
         self.spn_backlight.setValue(0)
         self.cmb_freq.setCurrentIndex(2)   # 60 Hz
         self.shared_log.log(
-            "CAMERA",
-            f"{self.label}: defaults restored (not yet applied)",
-            "info")
+            "CAMERA", "Defaults restored (not yet applied)", "info")
 
 
 # ─────────────────────────────────────────────────────────────
@@ -680,30 +700,10 @@ class AcquisitionPanelRGB(QWidget):
 
         lay.addWidget(status_grp)
 
-        # ── Apply to both button ──────────────────────────────
-        sync_row = QHBoxLayout()
-        self.btn_sync_lr = QPushButton(
-            "⇄  Copy LEFT settings → RIGHT")
-        theme_manager.register_button(self.btn_sync_lr, "blue")
-        self.btn_sync_lr.clicked.connect(self._sync_left_to_right)
-        sync_row.addWidget(self.btn_sync_lr)
-        sync_row.addStretch()
-        lay.addLayout(sync_row)
-
-        # ── Per-camera tabs ───────────────────────────────────
-        cam_tabs = QTabWidget()
-
-        self.left_settings = CameraSettingsWidget(
-            LEFT_DEVICE, "LEFT", self.shared_log)
-        self.right_settings = CameraSettingsWidget(
-            RIGHT_DEVICE, "RIGHT", self.shared_log)
-
-        cam_tabs.addTab(
-            _scroll(self.left_settings),  "📷 LEFT camera")
-        cam_tabs.addTab(
-            _scroll(self.right_settings), "📷 RIGHT camera")
-
-        lay.addWidget(cam_tabs)
+        # ── Universal camera settings (applies to BOTH cameras) ───
+        self.camera_settings = CameraSettingsWidget(
+            [LEFT_DEVICE, RIGHT_DEVICE], self.shared_log)
+        lay.addWidget(_scroll(self.camera_settings))
         return w
 
     # ─────────────────────────────────────────────────────────
@@ -1288,32 +1288,6 @@ class AcquisitionPanelRGB(QWidget):
     #  HELPERS
     # ─────────────────────────────────────────────────────────
 
-    def _sync_left_to_right(self):
-        """Copy all LEFT settings values → RIGHT widget."""
-        r = self.right_settings
-        l = self.left_settings
-
-        r.chk_autofocus.setChecked(l.chk_autofocus.isChecked())
-        r.spn_focus.setValue(l.spn_focus.value())
-        r.chk_auto_exp.setChecked(l.chk_auto_exp.isChecked())
-        r.spn_exposure.setValue(l.spn_exposure.value())
-        r.chk_auto_wb.setChecked(l.chk_auto_wb.isChecked())
-        r.spn_wb_temp.setValue(l.spn_wb_temp.value())
-        r.spn_brightness.setValue(l.spn_brightness.value())
-        r.spn_contrast.setValue(l.spn_contrast.value())
-        r.spn_saturation.setValue(l.spn_saturation.value())
-        r.spn_hue.setValue(l.spn_hue.value())
-        r.spn_gamma.setValue(l.spn_gamma.value())
-        r.spn_gain.setValue(l.spn_gain.value())
-        r.spn_sharpness.setValue(l.spn_sharpness.value())
-        r.spn_backlight.setValue(l.spn_backlight.value())
-        r.cmb_freq.setCurrentIndex(l.cmb_freq.currentIndex())
-
-        self.shared_log.log(
-            "CAMERA",
-            "LEFT settings copied to RIGHT (not yet applied)",
-            "info")
-
     def _refresh_device_status(self):
         """Update device path labels."""
         self.lbl_left_dev.setText(
@@ -1342,8 +1316,7 @@ class AcquisitionPanelRGB(QWidget):
         We do a one-time settings refresh when enabled.
         """
         if enabled:
-            self.left_settings._refresh_all()
-            self.right_settings._refresh_all()
+            self.camera_settings._refresh_all()
 
     def reset_session(self):
         """Force new session on next capture."""
