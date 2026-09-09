@@ -31,6 +31,7 @@ Path   : /media/pagsun/Transcend/phd_project/emeet_dual_cam/
 
 import time
 import datetime
+from pathlib import Path
 
 import cv2
 import numpy as np
@@ -133,6 +134,15 @@ class AnalysisTabRGB(QWidget):
         self.btn_clear.setFixedHeight(24)
         self.btn_clear.clicked.connect(self._on_clear)
         hdr.addWidget(self.btn_clear)
+        self.btn_report = QPushButton("📄  Generate Word Report")
+        theme_manager.register_button(self.btn_report, "green")
+        self.btn_report.setFixedHeight(24)
+        self.btn_report.setToolTip(
+            "Builds a publication-quality .docx from the most recently "
+            "completed ARM DETECTION session (events, camera settings, "
+            "model info, software versions).")
+        self.btn_report.clicked.connect(self._on_generate_report)
+        hdr.addWidget(self.btn_report)
         root.addLayout(hdr)
 
         # ── Main split: event feed (left) | stats+status (right) ──
@@ -555,6 +565,122 @@ class AnalysisTabRGB(QWidget):
                           Qt.SmoothTransformation))
         except Exception:
             pass
+
+    def _on_generate_report(self):
+        """
+        Build a .docx from the most recently completed ARM DETECTION
+        session (self.detect._last_report_path, written by
+        DetectionPanelRGB._write_session_report() on disarm). Mirrors
+        the Spray Mission panel's own report-generation pattern
+        (navigation_panel_rgb.py's _sm_generate_report) -- background
+        thread, thread-safe log via QMetaObject.invokeMethod, a result
+        dialog on completion -- rather than inventing a second pattern
+        for the same kind of operation.
+        """
+        import shutil, subprocess, threading
+        from PyQt5.QtCore import QMetaObject, Q_ARG, Qt as _Qt
+
+        report_path = getattr(self.detect, "_last_report_path", None)
+        if not report_path or not Path(report_path).exists():
+            self.log.log(
+                "ANALYSIS",
+                "No completed session report yet — ARM detection, spray "
+                "at least once, then STOP to generate one",
+                "warn")
+            return
+
+        if not shutil.which("node"):
+            self.log.log(
+                "ANALYSIS",
+                "node not found — install Node.js to generate reports",
+                "error")
+            return
+
+        script = Path(__file__).resolve().parent.parent.parent / \
+            "generate_gui_session_report.js"
+        if not script.exists():
+            self.log.log(
+                "ANALYSIS",
+                f"generate_gui_session_report.js not found at {script}",
+                "error")
+            return
+
+        out_path = (Path(report_path).parent /
+                   f"ABEN_Session_Report_"
+                   f"{time.strftime('%Y%m%d_%H%M%S')}.docx")
+        cmd = ["node", str(script),
+               "--session", str(report_path), "--out", str(out_path)]
+
+        self.log.log("ANALYSIS", f"Generating report → {out_path.name} …",
+                     "info")
+        self.btn_report.setEnabled(False)
+
+        def _log_safe(msg):
+            QMetaObject.invokeMethod(
+                self, "_report_log_safe", _Qt.QueuedConnection,
+                Q_ARG(str, msg))
+
+        def _run():
+            try:
+                result = subprocess.run(
+                    cmd, capture_output=True, text=True,
+                    cwd=str(script.parent), timeout=60)
+                if result.returncode == 0:
+                    _log_safe(f"✓ Report: {out_path.name}")
+                    QMetaObject.invokeMethod(
+                        self, "_report_done", _Qt.QueuedConnection,
+                        Q_ARG(str, str(out_path)),
+                        Q_ARG(bool, True), Q_ARG(str, ""))
+                else:
+                    err = result.stderr.strip()[:200]
+                    _log_safe(f"✗ Report failed: {err}")
+                    QMetaObject.invokeMethod(
+                        self, "_report_done", _Qt.QueuedConnection,
+                        Q_ARG(str, str(out_path)),
+                        Q_ARG(bool, False), Q_ARG(str, err))
+            except subprocess.TimeoutExpired:
+                _log_safe("✗ Report timed out (>60s)")
+                QMetaObject.invokeMethod(
+                    self, "_report_done", _Qt.QueuedConnection,
+                    Q_ARG(str, ""), Q_ARG(bool, False),
+                    Q_ARG(str, "Process timed out after 60s"))
+            except Exception as e:
+                _log_safe(f"✗ Report error: {e}")
+                QMetaObject.invokeMethod(
+                    self, "_report_done", _Qt.QueuedConnection,
+                    Q_ARG(str, ""), Q_ARG(bool, False), Q_ARG(str, str(e)))
+
+        threading.Thread(target=_run, daemon=True).start()
+
+    from PyQt5.QtCore import pyqtSlot as _pyqtSlot
+
+    @_pyqtSlot(str)
+    def _report_log_safe(self, msg: str):
+        self.log.log("ANALYSIS", msg, "info")
+
+    @_pyqtSlot(str, bool, str)
+    def _report_done(self, out_path: str, success: bool, err: str):
+        from PyQt5.QtWidgets import QMessageBox
+        self.btn_report.setEnabled(True)
+        if success:
+            msg = QMessageBox(self)
+            msg.setWindowTitle("Report Generated")
+            msg.setIcon(QMessageBox.Information)
+            msg.setText("<b>Session report generated.</b>")
+            msg.setInformativeText(f"Saved to:<br><tt>{out_path}</tt>")
+            msg.setStandardButtons(QMessageBox.Ok)
+            msg.exec_()
+        else:
+            msg = QMessageBox(self)
+            msg.setWindowTitle("Report Failed")
+            msg.setIcon(QMessageBox.Warning)
+            msg.setText("<b>Report generation failed.</b>")
+            msg.setInformativeText(
+                "Check that Node.js and its docx package are installed.")
+            if err:
+                msg.setDetailedText(f"Error:\n{err}")
+            msg.setStandardButtons(QMessageBox.Ok)
+            msg.exec_()
 
     def showEvent(self, event):
         """

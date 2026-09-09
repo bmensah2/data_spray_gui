@@ -237,6 +237,11 @@ class DetectionPanelRGB(QWidget):
         self._session_meta = {}
         self._session_id    = None
         self._session_start = None
+        # Path of the most recently written session report JSON --
+        # survives past disarm (when _session_id itself is cleared),
+        # so a "Generate Word Report" button elsewhere (Session
+        # Analysis tab) can find it after the session has ended.
+        self._last_report_path = None
         # 3 distance-buffered zones: N1, N2, N3
         self._dist_zones  = [DistanceBufferedZone() for _ in range(3)]
         self._purge            = False
@@ -842,6 +847,7 @@ class DetectionPanelRGB(QWidget):
 
         if write_session_report(out_path, report):
             n = report["statistics"].get("total_events", 0)
+            self._last_report_path = out_path
             self.shared_log.log(
                 "DETECT",
                 f"Session report written — {n} event(s) → {out_path.name}",
