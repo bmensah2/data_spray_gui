@@ -72,6 +72,16 @@ SPRAY_MISSION_SCRIPT = (
 REPORT_SCRIPT = (
     "/media/pagsun/Transcend/phd_project/emeet_dual_cam/generate_report_rgb.js"
 )
+# Unified report generator -- renders BOTH mission (via
+# core/mission_report_adapter.py) and GUI ARM DETECTION sessions from
+# the same canonical schema, so a report looks the same regardless of
+# which workflow produced the session. REPORT_SCRIPT above still
+# works standalone and is left in place, but both "Generate Report"
+# buttons now route through this one instead.
+UNIFIED_REPORT_SCRIPT = (
+    "/media/pagsun/Transcend/phd_project/emeet_dual_cam/"
+    "generate_gui_session_report.js"
+)
 
 # Try Jetson home path first, fall back to SSD
 _MISSIONS_HOME = Path("/home/pagsun/phd_project/emeet_dual_cam/missions")
@@ -1402,7 +1412,15 @@ class NavigationPanelRGB(QWidget):
                 "Click GENERATE REPORT to build the Word document.")
 
     def _sm_generate_report(self):
-        """Run generate_report_rgb.js with node."""
+        """
+        Convert the mission session JSON to the canonical report
+        schema, then run the SAME unified generator
+        (generate_gui_session_report.js) the Session Analysis tab's
+        report button uses -- so a mission report and an ARM
+        DETECTION report look identical regardless of which workflow
+        produced the session, per the operator's request to unify
+        the two into one report format.
+        """
         import shutil
         session_path = self.sm_session_path.text().strip()
 
@@ -1427,21 +1445,41 @@ class NavigationPanelRGB(QWidget):
                 "error")
             return
 
+        # Convert the mission-shaped JSON into the canonical schema
+        # (metadata/provenance/statistics/events/warnings) -- pure
+        # Python, no subprocess needed for this step. Only the final
+        # docx build below shells out to node.
+        try:
+            import json
+            from core.mission_report_adapter import convert_mission_report
+            with open(session_path) as f:
+                mission_json = json.load(f)
+            canonical = convert_mission_report(mission_json)
+            canonical_path = (
+                Path(session_path).parent /
+                f"{Path(session_path).stem}_canonical.json")
+            with open(canonical_path, "w") as f:
+                json.dump(canonical, f, indent=2, default=str)
+            n_warn = len(canonical.get("warnings", []))
+            if n_warn:
+                self._sm_log(f"⚠ {n_warn} warning(s) in this session "
+                             f"(see the generated report)")
+        except Exception as e:
+            self.shared_log.log(
+                "SPRAY", f"Report conversion failed: {e}", "error")
+            return
+
         import time as _t
         out_path = (
             Path(session_path).parent /
-            f"ABEN_RGB_Report_{_t.strftime('%Y%m%d_%H%M%S')}.docx"
+            f"ABEN_Session_Report_{_t.strftime('%Y%m%d_%H%M%S')}.docx"
         )
 
-        # Check for validation JSON alongside session
-        val_path = Path(session_path).parent / "model_validation_rgb.json"
         cmd = [
-            "node", REPORT_SCRIPT,
-            "--session", session_path,
+            "node", UNIFIED_REPORT_SCRIPT,
+            "--session", str(canonical_path),
             "--out",     str(out_path),
         ]
-        if val_path.exists():
-            cmd += ["--validation", str(val_path)]
 
         self._sm_log(f"Generating report → {out_path.name} …")
         self.shared_log.log("SPRAY", "Generating report…", "info")
@@ -1461,7 +1499,7 @@ class NavigationPanelRGB(QWidget):
             try:
                 result = subprocess.run(
                     cmd, capture_output=True, text=True,
-                    cwd=str(Path(REPORT_SCRIPT).parent),
+                    cwd=str(Path(UNIFIED_REPORT_SCRIPT).parent),
                     timeout=60,
                 )
                 if result.returncode == 0:

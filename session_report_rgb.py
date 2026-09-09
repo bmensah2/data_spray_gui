@@ -77,6 +77,29 @@ class SystemConfigSnapshot:
     field_id:          str = ""
     researcher:        str = ""
 
+    # Operator-entered session metadata (added for report unification --
+    # previously only the GUI's ARM DETECTION path captured these; a
+    # mission run's report had no operator name, crop, or growth stage
+    # at all). Distinct from `researcher` above: this `operator` is
+    # whoever physically ran this specific session.
+    operator:      str = ""
+    institution:   str = ""
+    crop:          str = ""
+    growth_stage:  str = ""
+    notes:         str = ""
+
+    # Per-camera actual settings and system provenance (added for
+    # report unification -- populated via core/session_provenance.py's
+    # capture functions, the SAME functions the GUI path uses, so
+    # mission and GUI reports draw this data from one shared
+    # implementation rather than two that could drift).
+    left_camera_settings:  Dict = field(default_factory=dict)
+    right_camera_settings: Dict = field(default_factory=dict)
+    model_classes:          Dict = field(default_factory=dict)
+    git_commit:             str  = ""
+    git_dirty:               object = None   # bool, or "unknown"
+    software_versions:      Dict = field(default_factory=dict)
+
 
 @dataclass
 class FrameRecord:
@@ -393,8 +416,17 @@ class SessionReportRGB:
 
         # Robot kinematics
         commanded_speed = self.system_config.drive_speed_mps
+        # Guard against a near-zero duration producing a nonsensical
+        # speed (e.g. distance/0.0002s -> tens of thousands of m/s) --
+        # `if self.duration_s` alone only catches exactly 0.0, not a
+        # degenerate fraction of a second from a near-instant abort.
+        # A real field session takes real seconds; anything under 0.5s
+        # isn't a meaningful speed measurement.
+        MIN_DURATION_FOR_SPEED_S = 0.5
         actual_speed = (self.distance_traveled_final / self.duration_s
-                         if self.duration_s else 0.0)
+                         if self.duration_s and
+                            self.duration_s >= MIN_DURATION_FOR_SPEED_S
+                         else 0.0)
         s["robot"] = {
             "target_distance_m": self.target_distance,
             "distance_traveled_m": self.distance_traveled_final,

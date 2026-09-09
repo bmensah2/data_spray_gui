@@ -89,13 +89,14 @@ except ImportError:
 # ─────────────────────────────────────────────────────────────
 
 CAMERA_AVAILABLE = False
-LEFT_CAMERA = None   # resolved when DualEMEETCamera imports
+LEFT_CAMERA  = None   # resolved when DualEMEETCamera imports
+RIGHT_CAMERA = None
 try:
-    from core.dual_emeet_camera import DualEMEETCamera, LEFT_CAMERA
+    from core.dual_emeet_camera import DualEMEETCamera, LEFT_CAMERA, RIGHT_CAMERA
     CAMERA_AVAILABLE = True
 except ImportError:
     try:
-        from core.dual_emeet_camera import DualEMEETCamera, LEFT_CAMERA
+        from core.dual_emeet_camera import DualEMEETCamera, LEFT_CAMERA, RIGHT_CAMERA
         CAMERA_AVAILABLE = True
     except ImportError as e:
         print(f"[MISSION] DualEMEETCamera not importable ({e})")
@@ -438,7 +439,12 @@ class SprayMissionRGB:
                  dry_run:      bool  = False,
                  dummy_detect: bool  = False,
                  field_id:     str   = "",
-                 researcher:   str   = "nana"):
+                 researcher:   str   = "nana",
+                 operator:     str   = "",
+                 institution:  str   = "",
+                 crop:         str   = "",
+                 growth_stage: str   = "",
+                 notes:        str   = ""):
 
         self.dist         = dist
         self.speed        = speed
@@ -488,6 +494,33 @@ class SprayMissionRGB:
         # ── Session report ────────────────────────────────────
         self.report = None
         if REPORT_AVAILABLE:
+            # Provenance -- camera settings, model class list, software
+            # versions/git commit -- captured via the SAME functions
+            # the GUI's ARM DETECTION path uses (core/session_provenance.py),
+            # so mission and GUI reports draw this data from one shared
+            # implementation instead of two that could quietly drift.
+            # Best-effort: each piece degrades independently rather than
+            # failing the whole snapshot construction.
+            left_cam_settings, right_cam_settings = {}, {}
+            model_classes, sw_versions = {}, {}
+            git_commit, git_dirty = "", "unknown"
+            try:
+                from core.session_provenance import (
+                    capture_camera_settings, capture_model_classes,
+                    capture_software_versions)
+                if LEFT_CAMERA:
+                    left_cam_settings = capture_camera_settings(LEFT_CAMERA)
+                if RIGHT_CAMERA:
+                    right_cam_settings = capture_camera_settings(RIGHT_CAMERA)
+                model_classes_result = capture_model_classes(self.engine)
+                if model_classes_result.get("available"):
+                    model_classes = model_classes_result.get("classes", {})
+                sw_versions = capture_software_versions()
+                git_commit  = sw_versions.get("git_commit", "")
+                git_dirty   = sw_versions.get("git_dirty", "unknown")
+            except Exception as e:
+                print(f"[MISSION] Provenance capture failed: {e}")
+
             snap = SystemConfigSnapshot(
                 camera_model      = "eMeet C960 4K (Dual RGB)",
                 camera_height_m   = self.geo.camera_height_m,
@@ -503,6 +536,17 @@ class SprayMissionRGB:
                 zone_threshold    = (self.rgb_cfg.zones.detection_threshold
                                      if self.rgb_cfg else 4),
                 detection_mode    = "DUMMY" if self.dummy_detect else "LIVE",
+                operator             = operator,
+                institution           = institution,
+                crop                  = crop,
+                growth_stage          = growth_stage,
+                notes                 = notes,
+                left_camera_settings  = left_cam_settings,
+                right_camera_settings = right_cam_settings,
+                model_classes         = model_classes,
+                git_commit            = git_commit,
+                git_dirty             = git_dirty,
+                software_versions     = sw_versions,
             )
             self.report = SessionReport(snap)
 
@@ -832,6 +876,16 @@ def main():
                     help="Field identifier for session report")
     ap.add_argument("--researcher", default="nana",
                     help="Researcher name for session report")
+    ap.add_argument("--operator",    default="",
+                    help="Operator name for session report (who ran this session)")
+    ap.add_argument("--institution", default="",
+                    help="Institution for session report")
+    ap.add_argument("--crop",        default="",
+                    help="Crop for session report")
+    ap.add_argument("--growth-stage", default="",
+                    help="Growth stage for session report")
+    ap.add_argument("--notes",       default="",
+                    help="Free-text notes for session report")
     args = ap.parse_args()
 
     SprayMissionRGB(
@@ -844,6 +898,11 @@ def main():
         dummy_detect = args.dummy_detect,
         field_id     = args.field_id,
         researcher   = args.researcher,
+        operator     = args.operator,
+        institution  = args.institution,
+        crop         = args.crop,
+        growth_stage = args.growth_stage,
+        notes        = args.notes,
     ).run()
 
 

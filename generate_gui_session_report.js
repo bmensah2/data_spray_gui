@@ -168,6 +168,73 @@ children.push(simpleTable(
 children.push(divider());
 
 // ── Camera Settings ──────────────────────────────────────────
+// ── Mission-specific extras (robot kinematics, camera grab
+//    performance, inference timing distribution) -- present only
+//    when this report came from START MISSION, since ARM DETECTION
+//    sessions don't have a "travel toward a target distance" concept
+//    or per-frame camera-grab success tracking in the same way. ──
+const mx = stats.mission_extras;
+if (mx) {
+  children.push(h1("Mission Kinematics & Performance"));
+
+  const r = mx.robot || {};
+  children.push(h2("Robot"));
+  children.push(simpleTable(
+    ["Metric", "Value"],
+    [
+      ["Target distance", `${fmt(r.target_distance_m, 2)} m`],
+      ["Distance traveled", `${fmt(r.distance_traveled_m, 2)} m`],
+      ["Duration", `${fmt(r.duration_s, 1)} s`],
+      ["Commanded speed", `${fmt(r.commanded_speed_mps, 3)} m/s`],
+      ["Actual avg speed", `${fmt(r.actual_avg_speed_mps, 3)} m/s`],
+      ["Speed accuracy", pct(r.speed_accuracy_pct)],
+      ["Ended because", r.abort_reason || "—"],
+    ],
+    [4680, 4680],
+  ));
+
+  const c = mx.camera || {};
+  if (Object.keys(c).length) {
+    children.push(h2("Camera Grab Performance"));
+    children.push(simpleTable(
+      ["Metric", "Value"],
+      [
+        ["Frame grabs attempted", c.grabs_attempted ?? "—"],
+        ["Frame grabs succeeded", c.grabs_succeeded ?? "—"],
+        ["Success rate", pct(c.success_rate_pct)],
+        ["Avg dual-cam sync error", c.avg_sync_error_ms != null ? `${fmt(c.avg_sync_error_ms, 1)} ms` : "—"],
+        ["Max dual-cam sync error", c.max_sync_error_ms != null ? `${fmt(c.max_sync_error_ms, 1)} ms` : "—"],
+        ["Sync errors >50ms", c.sync_errors_over_50ms ?? "—"],
+      ],
+      [4680, 4680],
+    ));
+  }
+
+  const d = mx.detection || {};
+  if (d.frames_processed > 0) {
+    children.push(h2("Inference Timing"));
+    const inf = d.inference_ms || {};
+    children.push(simpleTable(
+      ["Metric", "Value"],
+      [
+        ["Frames processed", d.frames_processed],
+        ["Achieved FPS", d.achieved_fps != null ? fmt(d.achieved_fps, 2) : "—"],
+        ["Inference time (mean/min/max)", inf.mean != null ? `${fmt(inf.mean,1)} / ${fmt(inf.min,1)} / ${fmt(inf.max,1)} ms` : "—"],
+        ["Inference p95", inf.p95 != null ? `${fmt(inf.p95, 1)} ms` : "—"],
+      ],
+      [4680, 4680],
+    ));
+  }
+
+  const sp = mx.spray || {};
+  if (sp.near_misses) {
+    children.push(h2("Near Misses"));
+    children.push(statLine("Detections that never confirmed",
+      `${sp.near_misses} (debounce filter correctly suppressed noise)`));
+  }
+  children.push(divider());
+}
+
 children.push(h1("Camera Settings"));
 if (Object.keys(cams).length === 0) {
   children.push(p("No camera settings were captured for this session.", { color: COLOR_WARN }));
