@@ -163,7 +163,10 @@ class DualCameraPanel:
         # Lists — both Tab1 and Tab2 each call camera_control_bar()
         # and display_widget(), so we track all instances and update all.
         self._display_lbls:    list = []   # all QLabel display widgets
-        self._connect_btns:    list = []   # all connect buttons
+        # Global "▶ Start Camera" button(s) -- normally just one, in
+        # MainWindow's top toolbar, but tracked as a list the same way
+        # as everything else here in case a second copy (e.g. a future
+        # fullscreen shortcut) is ever added.
         self._start_btns:      list = []   # all start/stop buttons
         self._status_lbls:     list = []   # all status labels
         self._disp_mode_combos: list = []  # all display mode combos
@@ -174,6 +177,15 @@ class DualCameraPanel:
         # spray-event mini-feed. None on Data Collection tab, where
         # there's nothing to show since detection isn't running there.
         self.spray_event_source = None
+
+        # Optional: set by tab_detection.py to itself (the whole
+        # DetectionTab, not self.detect) after construction, so the
+        # fullscreen popout's Arm/Stop/E-Stop bar (see
+        # open_fullscreen_view()) can call arm()/stop_detection()/
+        # estop() and sync its LED/label to the armed_changed signal.
+        # None means no Arm/Stop/E-Stop bar is shown in fullscreen --
+        # there's nothing meaningful for it to control.
+        self.detection_tab_ref = None
 
         # Display refresh timer
         self._display_timer = QTimer()
@@ -466,8 +478,16 @@ class DualCameraPanel:
 
     def camera_control_bar(self, fullscreen_dialog=None) -> QWidget:
         """
-        Returns the camera toolbar widget (connect / start / stop).
-        Mirrors CameraPanel.camera_control_bar().
+        Returns the camera toolbar widget (view mode + fullscreen +
+        status). Connect/Start used to live here too, duplicated in
+        every tab that embedded this bar -- moved to a single global
+        "▶ Start Camera" button in MainWindow's top toolbar instead
+        (see main_gui_rgb.py), since start()/stop() already handle
+        BOTH connecting and starting/stopping acquisition as one
+        combined action (start() calls connect() internally if not
+        already connected), so a separate Connect button was never
+        actually necessary -- just duplicated UI for one underlying
+        toggle.
 
         fullscreen_dialog: pass the QDialog this bar is being embedded
         INSIDE (only from open_fullscreen_view() itself) so the
@@ -481,25 +501,6 @@ class DualCameraPanel:
         lay = QHBoxLayout(bar)
         lay.setContentsMargins(6, 4, 6, 4)
         lay.setSpacing(6)
-
-        # Connect button
-        connect_btn = QPushButton("🔌  CONNECT")
-        theme_manager.register_button(connect_btn, "green")
-        connect_btn.setFixedHeight(32)
-        connect_btn.setMinimumWidth(110)
-        connect_btn.clicked.connect(self._on_connect_btn)
-        lay.addWidget(connect_btn)
-        self._connect_btns.append(connect_btn)
-
-        # Start / Stop button
-        start_btn = QPushButton("▶  START")
-        theme_manager.register_button(start_btn, "green")
-        start_btn.setFixedHeight(32)
-        start_btn.setMinimumWidth(90)
-        start_btn.setEnabled(False)
-        start_btn.clicked.connect(self._on_start_stop_btn)
-        lay.addWidget(start_btn)
-        self._start_btns.append(start_btn)
 
         # Display mode selector
         lay.addWidget(_muted("View:"))
@@ -593,15 +594,15 @@ class DualCameraPanel:
     def _cleanup_fullscreen_widgets(self, dlg: QWidget):
         """
         Remove every widget created for a now-closing fullscreen
-        dialog from every tracking list (display labels, connect/
-        start buttons, status labels, view-mode combos), so they stop
+        dialog from every tracking list (display labels, start
+        buttons, status labels, view-mode combos), so they stop
         receiving frame/state updates and don't accumulate as dead
         references over repeated open/close of the fullscreen view.
         Uses widget-tree ancestry rather than tracking "which list did
         this widget go into" individually, so it stays correct if the
         fullscreen dialog's contents ever change.
         """
-        for lst in (self._display_lbls, self._connect_btns,
+        for lst in (self._display_lbls,
                     self._start_btns, self._status_lbls,
                     self._disp_mode_combos):
             for w in list(lst):
@@ -650,6 +651,83 @@ class DualCameraPanel:
         hint.clicked.connect(dlg.close)
         lay.addWidget(hint)
 
+        # ARM DETECTION / STOP / E-STOP bar -- only shown when this
+        # panel's detection_tab_ref is set (see tab_detection.py),
+        # i.e. detection is genuinely available to control from here.
+        # Positioned above the camera control bar, mirroring
+        # tab_detection.py's own _detection_arm_bar() placement at the
+        # very top of that tab.
+        if self.detection_tab_ref is not None:
+            from gui.style import LED
+            det_ref = self.detection_tab_ref
+
+            arm_bar = QWidget()
+            theme_manager.register_widget(
+                arm_bar, lambda p: f"background-color:{p['bg0']};")
+            arm_lay = QHBoxLayout(arm_bar)
+            arm_lay.setContentsMargins(8, 6, 8, 6)
+            arm_lay.setSpacing(8)
+
+            arm_lay.addWidget(_muted("DETECTION:"))
+
+            btn_arm = QPushButton("▶  ARM DETECTION")
+            theme_manager.register_button(btn_arm, "green")
+            btn_arm.setMinimumHeight(32)
+            btn_arm.setMinimumWidth(160)
+            btn_arm.clicked.connect(det_ref.arm)
+            arm_lay.addWidget(btn_arm)
+
+            btn_stop = QPushButton("⏹  STOP")
+            theme_manager.register_button(btn_stop, "dim_red")
+            btn_stop.setMinimumHeight(32)
+            btn_stop.clicked.connect(det_ref.stop_detection)
+            arm_lay.addWidget(btn_stop)
+
+            btn_estop = QPushButton("⚡  E-STOP")
+            theme_manager.register_button(btn_estop, "estop")
+            btn_estop.setMinimumHeight(32)
+            btn_estop.setMinimumWidth(100)
+            btn_estop.clicked.connect(det_ref.estop)
+            arm_lay.addWidget(btn_estop)
+
+            arm_lay.addStretch()
+
+            arm_led = LED(14)
+            arm_lay.addWidget(arm_led)
+            arm_status = _muted("DISARMED")
+            arm_lay.addWidget(arm_status)
+
+            def _sync_arm_state(armed, _btn_arm=btn_arm, _btn_stop=btn_stop,
+                                _led=arm_led, _status=arm_status):
+                try:
+                    _btn_arm.setEnabled(not armed)
+                    theme_manager.register_button(
+                        _btn_arm, "dim_green" if armed else "green")
+                    _btn_stop.setEnabled(armed)
+                    theme_manager.register_button(
+                        _btn_stop, "red" if armed else "dim_red")
+                    _led.set_state(armed, role="amber")
+                    _status.setText("ARMED" if armed else "DISARMED")
+                    theme_manager.register_widget(
+                        _status, lambda p, _armed=armed: (
+                            f"color:{p['amber'] if _armed else p['muted']};"
+                            f"font-size:10px;"
+                            f"font-family:'Noto Sans',Arial,sans-serif;"))
+                except RuntimeError:
+                    pass   # dialog/widgets already destroyed
+
+            # Initialize to whatever the REAL current armed state
+            # already is -- opening fullscreen while already armed
+            # (a very normal thing to do) must not show a stale
+            # "DISARMED" until the next explicit arm/disarm action.
+            _sync_arm_state(det_ref.detect.is_armed)
+            det_ref.armed_changed.connect(_sync_arm_state)
+            arm_connections = [(det_ref.armed_changed, _sync_arm_state)]
+
+            lay.addWidget(arm_bar)
+        else:
+            arm_connections = []
+
         # Full control bar — connect/stop/view/fullscreen, same as the
         # embedded one, kept in sync automatically like every other
         # tracked control-bar instance.
@@ -659,7 +737,7 @@ class DualCameraPanel:
         body.setContentsMargins(0, 0, 0, 0)
         body.setSpacing(0)
 
-        connections = []   # (signal, slot) pairs to disconnect on close
+        connections = list(arm_connections)   # (signal, slot) pairs to disconnect on close
 
         # Live status table (mode/FPS/inference/detections/events) --
         # replaces the HUD text that used to be baked into the video
@@ -745,11 +823,15 @@ class DualCameraPanel:
 
     # ── Control bar button logic ──────────────────────────────
 
-    def _on_connect_btn(self):
-        if self._camera is None:
-            self.connect()
-        else:
-            self.stop()
+    def toggle_start_stop(self):
+        """
+        Public entry point for the global "▶ Start Camera" button in
+        MainWindow's top toolbar. Same logic the old per-tab Start/Stop
+        button already used -- start() connects internally if needed,
+        so this one call handles the full connect+start (or stop+
+        disconnect) cycle as a single combined action.
+        """
+        self._on_start_stop_btn()
 
     def _on_start_stop_btn(self):
         if self.is_acquiring:
@@ -762,25 +844,13 @@ class DualCameraPanel:
         connected   = self._camera is not None
         acquiring   = self.is_acquiring
 
-        for btn in self._connect_btns:
-            try:
-                if connected:
-                    btn.setText("🔌  DISCONNECT")
-                    theme_manager.register_button(btn, "red")
-                else:
-                    btn.setText("🔌  CONNECT")
-                    theme_manager.register_button(btn, "green")
-            except RuntimeError:
-                pass   # widget deleted
-
         for btn in self._start_btns:
             try:
-                btn.setEnabled(connected)
                 if acquiring:
-                    btn.setText("⏹  STOP")
+                    btn.setText("⏹  STOP CAMERA")
                     theme_manager.register_button(btn, "red")
                 else:
-                    btn.setText("▶  START")
+                    btn.setText("▶  START CAMERA")
                     theme_manager.register_button(btn, "green")
             except RuntimeError:
                 pass
@@ -840,7 +910,6 @@ class DualCameraPanel:
             self._camera = None
         self.is_acquiring      = False
         self.on_frame_ready    = None
-        self._connect_btns     = []
         self._start_btns       = []
         self._status_lbls      = []
         self._display_lbls     = []

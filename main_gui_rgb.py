@@ -89,6 +89,14 @@ class MainWindow(QMainWindow):
 
         # Camera — one GenTL connection, shared producer thread
         self.camera = CameraPanel(self._sys_log)
+        # Register the global Start Camera button (built earlier in
+        # _build_ui(), before self.camera existed -- can't be added to
+        # camera._start_btns until now) into the same tracked-button
+        # list camera_control_bar()'s own Start/Stop buttons use, so
+        # _update_ctrl_bar() keeps its text/color in sync with actual
+        # connect/acquiring state exactly like every other instance.
+        self.camera._start_btns.append(self.hdr_btn_start_camera)
+        self.camera._update_ctrl_bar()
         self._rs_proc = None   # RealSense subprocess handle
         self.kb_nav  = KeyboardNav(self._sys_log)
 
@@ -287,6 +295,20 @@ class MainWindow(QMainWindow):
         self.hdr_btn_camera_settings.clicked.connect(
             self._open_camera_settings_dialog)
         r2lay.addWidget(self.hdr_btn_camera_settings)
+
+        # Start Camera — global connect+start/stop toggle for the
+        # shared DualCameraPanel, one button instead of the separate
+        # per-tab CONNECT and START buttons Data Collection and
+        # Detection each used to embed independently (both driving
+        # the SAME underlying camera regardless of which tab's copy
+        # was clicked, so having two was redundant, not two distinct
+        # cameras to control).
+        self.hdr_btn_start_camera = QPushButton("▶  START CAMERA")
+        theme_manager.register_button(self.hdr_btn_start_camera, "green")
+        self.hdr_btn_start_camera.setFixedHeight(26)
+        self.hdr_btn_start_camera.clicked.connect(
+            self.camera.toggle_start_stop)
+        r2lay.addWidget(self.hdr_btn_start_camera)
 
         # Port selector
         from PyQt5.QtWidgets import QComboBox

@@ -99,6 +99,16 @@ class DetectionTab(QWidget):
         # of Detection-only state into an unrelated tab.
         self.camera.spray_event_source = self.detect
 
+        # Let the fullscreen popout show its own ARM DETECTION / STOP /
+        # E-STOP bar too, so an operator watching fullscreen doesn't
+        # need to exit it to control detection. Points at THIS TAB
+        # (not self.detect), since arm()/stop_detection()/estop() and
+        # the armed_changed signal the fullscreen bar syncs to live
+        # here -- self.detect only has the lower-level _det_start()/
+        # _det_stop()/_det_estop(), without the cross-tab movement
+        # lock and button/LED state this tab's wrappers also handle.
+        self.camera.detection_tab_ref = self
+
         # Wire detection ros_bridge → nav odom display
         # Updated when detection arms
         self._wire_ros_bridge()
@@ -311,6 +321,25 @@ class DetectionTab(QWidget):
         self.nav.set_movement_controls_enabled(False)
         self.armed_changed.emit(False)
         self.log.log("SYS", "E-STOP activated", "error")
+
+    # ── Public API (for the fullscreen popout's own Arm/Stop/E-Stop
+    #    bar, wired via self.camera.detection_tab_ref -- see __init__)
+    #    Thin wrappers around the private handlers above so external
+    #    callers (a different widget, not this tab's own buttons) have
+    #    a clean, obviously-public entry point rather than reaching
+    #    into _on_arm/_on_stop/_on_estop directly. ──
+
+    def arm(self):
+        """Arm detection -- same action as this tab's own ARM DETECTION button."""
+        self._on_arm()
+
+    def stop_detection(self):
+        """Disarm detection -- same action as this tab's own STOP button."""
+        self._on_stop()
+
+    def estop(self):
+        """Emergency stop -- same action as this tab's own E-STOP button."""
+        self._on_estop()
 
     def cleanup(self):
         self._bridge_timer.stop()
