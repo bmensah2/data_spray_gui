@@ -138,20 +138,22 @@ class OfflineImagePairSource:
 def _build_side_by_side(left, right):
     """
     Minimal Side-by-Side stitch matching
-    DualCameraPanel._build_display()'s output shape exactly (half_w
-    left, 4px black divider, half_w right) -- the shape
-    draw_detection_overlay() expects. Deliberately NOT reusing
-    DualCameraPanel._build_display() itself, which carries several
-    other live-display responsibilities (zoom, channel views, the
-    live QLabel target) that offline review doesn't need; the stitch
-    itself is simple enough to keep self-contained here rather than
-    risk pulling in unrelated live-camera state.
+    DualCameraPanel._build_display()'s Side-by-Side output exactly:
+    each half gets HALF THE WIDTH, with height derived from the
+    camera's own aspect ratio (not the input frame's raw height) so
+    neither half is stretched -- half_w-by-full-height would squash
+    the image vertically-relative-to-horizontally, which is exactly
+    the bug this was caught doing before this fix. The shape produced
+    here is what draw_detection_overlay() expects (its own scale
+    factor, half_w/1920, assumes a proportionally-scaled frame).
     """
     h, w = left.shape[:2]
+    cam_aspect = w / h if h else 16 / 9   # source frame's own aspect ratio
     half_w = w // 2 if w == right.shape[1] else min(w, right.shape[1]) // 2
-    l_disp = cv2.resize(left,  (half_w, h))
-    r_disp = cv2.resize(right, (half_w, h))
-    divider = np.zeros((h, 4, 3), dtype=np.uint8)
+    disp_h = max(1, int(half_w / cam_aspect))
+    l_disp = cv2.resize(left,  (half_w, disp_h))
+    r_disp = cv2.resize(right, (half_w, disp_h))
+    divider = np.zeros((disp_h, 4, 3), dtype=np.uint8)
     return cv2.hconcat([l_disp, divider, r_disp])
 
 
@@ -273,7 +275,12 @@ class OfflineInferenceRunner:
 
             side_by_side = _build_side_by_side(left, right)
             overlay_img = draw_detection_overlay(
-                side_by_side, dual_result, list(spray_states), self.cfg)
+                side_by_side, dual_result, list(spray_states), self.cfg,
+                # Larger than the live Detection tab's defaults -- this
+                # combined side-by-side frame is typically viewed at a
+                # different scale in the offline review UI, and the
+                # live-tuned size (13px/1px) read as too small there.
+                font_size=20, box_thick=2)
 
             yield frame_idx, overlay_img, dual_result
             frame_idx += 1

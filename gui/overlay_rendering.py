@@ -19,7 +19,8 @@ import cv2
 from gui.frame_text import put_text, text_size
 
 
-def draw_detection_overlay(img, dual_result, spray_states, cfg):
+def draw_detection_overlay(img, dual_result, spray_states, cfg,
+                           font_size=13, box_thick=1):
     """
     Draw zone boundaries and detection boxes on a side-by-side display
     image (DualCameraPanel._build_display()'s Side-by-Side output).
@@ -30,6 +31,14 @@ def draw_detection_overlay(img, dual_result, spray_states, cfg):
     False] for offline review, where no nozzle is actually spraying;
     zone boundaries then always render in their normal (non-highlighted)
     style, which is the correct behavior for reviewing recorded footage.
+
+    font_size/box_thick: override the defaults tuned for the live
+    Detection tab's display context. Offline review's combined
+    side-by-side frame is typically shown at a different scale than
+    live, so it passes larger values here rather than this function
+    silently looking too small there -- defaults are unchanged so
+    every existing call (live Detection tab) renders identically to
+    before.
 
     Style constants — all in one place for easy tuning:
       FONT_SIZE   : 13   — Noto Sans (via gui/frame_text.py), matches
@@ -43,8 +52,8 @@ def draw_detection_overlay(img, dual_result, spray_states, cfg):
         return img
 
     # ── Style constants ───────────────────────────────────
-    FONT_SIZE   = 13                         # Noto Sans, small/readable
-    BOX_THICK   = 1                          # thin detection boxes
+    FONT_SIZE   = font_size
+    BOX_THICK   = box_thick
     ZONE_THICK  = 1                          # thin zone lines
 
     # Per-class colours

@@ -32,7 +32,7 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtCore import Qt, pyqtSignal, QTimer
 from PyQt5.QtGui import QImage, QPixmap
 
-from gui.style import _divider, _muted, _sec
+from gui.style import _divider, _muted, _sec, _scroll
 from gui.theme_manager import theme_manager
 from gui.shared_log import UnifiedLog, LogPanel
 from gui.spray_event_table import build_stats_table, update_stats_row
@@ -215,11 +215,15 @@ class OfflineReviewTab(QWidget):
             "(no ground truth). See Model Evaluation for that."))
         self.tbl_summary = build_stats_table(
             ["Frames", "With Det.", "Total Det.", "Top Class", "Mean Conf"])
+        self.tbl_summary.setMinimumHeight(80)
         sg2.addWidget(self.tbl_summary)
         llay.addWidget(stats_grp)
 
         llay.addStretch()
-        lay.addWidget(left)
+        left_scroll = _scroll(left)
+        left_scroll.setMinimumWidth(360)
+        left_scroll.setMaximumWidth(440)
+        lay.addWidget(left_scroll)
 
         # ── Right: frame display ───────────────────────────
         right = QWidget()
