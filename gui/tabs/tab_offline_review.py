@@ -237,9 +237,15 @@ class OfflineReviewTab(QWidget):
         sg2.addWidget(self.tbl_summary)
 
         sg2.addWidget(_muted("By class:"))
-        self.tbl_by_class = QTableWidget(0, 3)
+        self.tbl_by_class = QTableWidget(0, 4)
         self.tbl_by_class.setHorizontalHeaderLabels(
-            ["Class", "Count", "Mean Conf"])
+            ["Class", "Total Detections", "Frames", "Mean Conf"])
+        self.tbl_by_class.setToolTip(
+            "Total Detections: every individual detection instance "
+            "across the whole run (one frame with 3 kochia plants "
+            "counts as 3).\nFrames: how many DISTINCT frames contained "
+            "at least one detection of this class (that same frame "
+            "counts as 1 here).")
         self.tbl_by_class.horizontalHeader().setSectionResizeMode(
             QHeaderView.Stretch)
         self.tbl_by_class.verticalHeader().setVisible(False)
@@ -562,13 +568,19 @@ class OfflineReviewTab(QWidget):
         # most frequent one. Rebuilt each update since the set of
         # classes can grow as processing progresses (e.g. sugarbeet
         # detected in frame 1, kochia doesn't appear until frame 40).
-        by_class = s.get("detections_by_class", {})
-        by_conf  = s.get("confidence_by_class", {})
+        # Two distinct counts shown side by side so there's no
+        # ambiguity about which one "Count" used to mean: Total
+        # Detections (every individual instance -- 3 kochia plants in
+        # one frame counts as 3) vs Frames (distinct frames containing
+        # this class -- that same frame counts as 1).
+        by_class   = s.get("detections_by_class", {})
+        by_frames  = s.get("frames_by_class", {})
+        by_conf    = s.get("confidence_by_class", {})
         classes  = sorted(by_class, key=by_class.get, reverse=True)
         self.tbl_by_class.setRowCount(len(classes))
         for row, cls in enumerate(classes):
             for col, val in enumerate([
-                    cls, str(by_class[cls]),
+                    cls, str(by_class[cls]), str(by_frames.get(cls, 0)),
                     f"{by_conf.get(cls, 0):.2f}"]):
                 item = self.tbl_by_class.item(row, col)
                 if item is None:

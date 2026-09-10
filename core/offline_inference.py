@@ -188,14 +188,25 @@ class DetectionSummary:
         self.frames_processed = 0
         self.frames_with_detection = 0
         self._all_detections = []   # list of (class_name, confidence)
+        # Per-class frame count -- how many DISTINCT frames contained
+        # at least one detection of this class, as opposed to total
+        # detection instances (one frame with 3 kochia counts as 3
+        # toward the detection total but only 1 here). Tracked
+        # separately so the UI can show both numbers explicitly rather
+        # than leaving it ambiguous which one "Count" means.
+        self._frames_by_class = {}   # {class_name: frame_count}
 
     def add(self, dual_result):
         self.frames_processed += 1
         dets = dual_result.all_detections()
         if dets:
             self.frames_with_detection += 1
+        classes_this_frame = set()
         for d in dets:
             self._all_detections.append((d.class_name, d.confidence))
+            classes_this_frame.add(d.class_name)
+        for cls in classes_this_frame:
+            self._frames_by_class[cls] = self._frames_by_class.get(cls, 0) + 1
 
     def finalize(self) -> dict:
         by_class, confs = {}, []
@@ -232,6 +243,7 @@ class DetectionSummary:
                 if self.frames_processed else 0.0),
             "total_detections":       len(self._all_detections),
             "detections_by_class":    by_class,
+            "frames_by_class":        dict(self._frames_by_class),
             "confidence_by_class":    by_class_mean_conf,
             "confidence_stats":       conf_stats,
         }
@@ -412,9 +424,45 @@ if __name__ == "__main__":
     assert result["detections_by_class"] == {"kochia": 3}
     assert result["confidence_stats"]["min"] == 0.8
     assert result["confidence_by_class"]["kochia"] == round((0.8+0.85+0.9)/3, 3)
+    assert result["frames_by_class"]["kochia"] == 3   # 1 detection/frame here
     print(f"✓ Per-class mean confidence also correctly computed: "
           f"{result['confidence_by_class']}")
     print(f"✓ DetectionSummary correctly aggregates: {result}")
+
+    # The distinction that actually matters: MULTIPLE detections of
+    # the same class within a SINGLE frame must count as multiple
+    # toward total detections, but only ONE frame toward frame count
+    # -- this is exactly what "detections_by_class" vs "frames_by_class"
+    # need to prove differ, to confirm the count is genuinely per-
+    # detection and not silently per-frame.
+    summary2 = DetectionSummary()
+    three_kochia_one_frame = [
+        Detection(class_id=1, class_name="kochia", confidence=0.7,
+                  x1=0, y1=0, x2=10, y2=10, camera="left"),
+        Detection(class_id=1, class_name="kochia", confidence=0.8,
+                  x1=20, y1=20, x2=30, y2=30, camera="left"),
+        Detection(class_id=1, class_name="kochia", confidence=0.9,
+                  x1=40, y1=40, x2=50, y2=50, camera="left"),
+    ]
+    summary2.add(DualInferenceResult(
+        left=InferenceResult(detections=three_kochia_one_frame,
+                             inference_ms=5, preprocess_ms=2, total_ms=7,
+                             frame_shape=(1080,1920), camera="left"),
+        right=InferenceResult(detections=[], inference_ms=5, preprocess_ms=2,
+                              total_ms=7, frame_shape=(1080,1920), camera="right"),
+        frame_id=0, timestamp=_t.time()))
+    result2 = summary2.finalize()
+    assert result2["detections_by_class"]["kochia"] == 3, (
+        "3 individual kochia plants in one frame must count as 3 "
+        "total detections")
+    assert result2["frames_by_class"]["kochia"] == 1, (
+        "all 3 were in the SAME frame, so frame count must be 1, "
+        "not 3 -- this is the number that would be wrong if the "
+        "count were silently tracking frames instead of detections")
+    print(f"✓ Three same-class detections in ONE frame correctly give "
+          f"detections_by_class=3 but frames_by_class=1 -- proves the "
+          f"'Count' the UI shows is genuinely per-detection, not "
+          f"per-frame")
 
     print()
     print("=" * 55)
