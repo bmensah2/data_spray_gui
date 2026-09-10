@@ -660,6 +660,12 @@ class AnalysisTabRGB(QWidget):
 
     @_pyqtSlot(str, bool, str)
     def _report_done(self, out_path: str, success: bool, err: str):
+        """
+        Non-modal (.show(), not .exec_()) -- a finished-task
+        notification shouldn't block the rest of the app. Kept alive
+        via self._report_msgbox so it isn't garbage-collected the
+        instant this method returns.
+        """
         from PyQt5.QtWidgets import QMessageBox
         self.btn_report.setEnabled(True)
         if success:
@@ -669,7 +675,6 @@ class AnalysisTabRGB(QWidget):
             msg.setText("<b>Session report generated.</b>")
             msg.setInformativeText(f"Saved to:<br><tt>{out_path}</tt>")
             msg.setStandardButtons(QMessageBox.Ok)
-            msg.exec_()
         else:
             msg = QMessageBox(self)
             msg.setWindowTitle("Report Failed")
@@ -680,7 +685,8 @@ class AnalysisTabRGB(QWidget):
             if err:
                 msg.setDetailedText(f"Error:\n{err}")
             msg.setStandardButtons(QMessageBox.Ok)
-            msg.exec_()
+        self._report_msgbox = msg
+        msg.show()
 
     def showEvent(self, event):
         """

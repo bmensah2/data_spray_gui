@@ -96,8 +96,12 @@ class MainWindow(QMainWindow):
         self.gantry = GantryPanel(self._sys_log)
 
         # Navigation panels — one per tab (Qt widgets can't share parents)
-        # Both connect to the same Husky via SSH
-        self.nav_collection = NavigationPanel(self._sys_log)
+        # Both connect to the same Husky via SSH. Data Collection's copy
+        # omits "Spray Mission (RGB)" -- that section only makes sense
+        # with detection actually armed to tell it which zones/nozzles
+        # to fire, which only happens on Detection tab.
+        self.nav_collection = NavigationPanel(
+            self._sys_log, show_spray_mission=False)
         self.nav_detection  = NavigationPanel(self._sys_log)
 
 

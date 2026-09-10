@@ -85,8 +85,10 @@ class CollectionTab(QWidget):
         # Gantry tab
         left_tabs.addTab(self.gantry, "⚙ Gantry")
 
-        # Data Collection tab
-        left_tabs.addTab(self.acq, "📷 Data Collection")
+        # Capture tab (camera settings moved to a global toolbar
+        # dialog -- see main_gui_rgb.py's "Camera Settings" button;
+        # this now shows only the capture/session content directly)
+        left_tabs.addTab(self.acq, "💾 Capture")
 
         left_w = QWidget()
         left_w.setMinimumWidth(400)

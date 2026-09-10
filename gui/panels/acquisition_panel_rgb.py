@@ -420,11 +420,21 @@ class CameraSettingsWidget(QWidget):
         self._apply_preset(settings, label)
 
     def _open_preset_editor(self):
-        """Open the preset editor dialog."""
-        from gui.preset_editor import PresetEditorDialog
-        dlg = PresetEditorDialog(
-            parent=self, read_current_fn=self._read_current_settings)
-        dlg.exec_()
+        """
+        Open (or re-show) the preset editor as a non-modal dialog.
+        Created once and reused on repeat clicks -- same pattern as
+        MainWindow's Camera Settings dialog -- rather than a blocking
+        .exec_() that would prevent interacting with the camera
+        settings controls (or anything else) while it's open.
+        """
+        if getattr(self, "_preset_editor_dialog", None) is None:
+            from gui.preset_editor import PresetEditorDialog
+            self._preset_editor_dialog = PresetEditorDialog(
+                parent=self, read_current_fn=self._read_current_settings)
+
+        self._preset_editor_dialog.show()
+        self._preset_editor_dialog.raise_()
+        self._preset_editor_dialog.activateWindow()
 
     def _read_current_settings(self) -> dict:
         """
@@ -609,13 +619,14 @@ class AcquisitionPanelRGB(QWidget):
     Camera Settings + Capture panel for the dual eMeet RGB system.
 
     Drop-in replacement for AcquisitionPanel used in tab_collection
-    and tab_detection. Public API is identical:
-      panel.subtabs              → QTabWidget, Capture only (camera
-                                    settings moved to MainWindow's
-                                    global dialog -- see settings_panel)
+    and tab_detection. Public API:
       panel.settings_panel       → the camera-settings widget (already
                                     scroll-wrapped), for MainWindow's
                                     top-toolbar "Camera Settings" button
+      panel  (as a widget itself) → the Capture panel content directly
+                                    (already scroll-wrapped); embed
+                                    `panel` itself as one tab, e.g.
+                                    left_tabs.addTab(self.acq, "💾 Capture")
       panel.enable_camera_controls(bool)
       panel.cleanup()
       panel.reset_session()
@@ -654,8 +665,7 @@ class AcquisitionPanelRGB(QWidget):
     def _build_ui(self):
         lay = QVBoxLayout(self)
         lay.setContentsMargins(0, 0, 0, 0)
-        self.subtabs = QTabWidget()
-        # NOTE: camera settings are deliberately NOT a subtab here
+        # NOTE: camera settings are deliberately NOT embedded here
         # anymore. They used to be embedded both here (Data Collection
         # tab) and, redundantly, as a second "quick controls" mini-panel
         # in Detection tab -- and since camera settings are genuinely
@@ -665,12 +675,17 @@ class AcquisitionPanelRGB(QWidget):
         # (see main_gui_rgb.py's "Camera Settings" button), available
         # from any tab instead of duplicated in two. self.settings_panel
         # is still built here (constructing self.camera_settings as a
-        # side effect) so MainWindow can grab it; it's just not added
-        # to self.subtabs.
+        # side effect) so MainWindow can grab it.
         self.settings_panel = _scroll(self._tab_cam_settings())
-        self.subtabs.addTab(
-            _scroll(self._tab_capture()),      "💾 Capture")
-        lay.addWidget(self.subtabs)
+
+        # No internal QTabWidget either -- Capture used to be the only
+        # remaining subtab here (after camera settings moved out above),
+        # which meant a single-item tab widget nested inside the outer
+        # "💾 Capture" tab tab_collection.py's own left_tabs already
+        # provides -- a pointless tab-inside-a-tab. This widget's
+        # content IS the capture panel directly now; the outer tab
+        # label supplies the "Capture" framing.
+        lay.addWidget(_scroll(self._tab_capture()))
 
     # ─────────────────────────────────────────────────────────
     #  SUBTAB 1: CAMERA SETTINGS

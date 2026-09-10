@@ -136,13 +136,26 @@ class NavigationPanelRGB(QWidget):
     """
     Shared navigation panel — manual moves + mission control.
     ros_bridge_ref: callable → ROSBridge or None
+
+    show_spray_mission: Data Collection and Detection each get their
+    own NavigationPanelRGB instance (Qt widgets can't share a parent),
+    both built from this same class -- but "Spray Mission (RGB)" only
+    makes sense on Detection tab, where a model is actually armed and
+    can tell it which zones/nozzles to fire. Data Collection tab has
+    no detection running at all, so a fully-built, seemingly-usable
+    Spray Mission section there was genuinely misleading -- not a
+    duplicate-widget bug (each tab's copy IS independent), but a
+    feature shown somewhere it can't meaningfully be used. Pass False
+    to omit that section entirely for a given instance.
     """
 
     def __init__(self, shared_log: UnifiedLog,
-                 ros_bridge_ref=None, parent=None):
+                 ros_bridge_ref=None, parent=None,
+                 show_spray_mission: bool = True):
         super().__init__(parent)
         self.shared_log    = shared_log
         self.ros_bridge_ref = ros_bridge_ref or (lambda: None)
+        self.show_spray_mission = show_spray_mission
 
         self._nav_proc        = None
         self._mission_proc    = None
@@ -194,9 +207,10 @@ class NavigationPanelRGB(QWidget):
         self._mission_grp_widget = self._mission_grp()
         lay.addWidget(self._mission_grp_widget)
         lay.addWidget(self._stop_grp())
-        lay.addWidget(_divider())
-        self._spray_mission_grp_widget = self._spray_mission_grp()
-        lay.addWidget(self._spray_mission_grp_widget)
+        if self.show_spray_mission:
+            lay.addWidget(_divider())
+            self._spray_mission_grp_widget = self._spray_mission_grp()
+            lay.addWidget(self._spray_mission_grp_widget)
         lay.addStretch()
 
         scroll.setWidget(inner)
@@ -757,7 +771,18 @@ class NavigationPanelRGB(QWidget):
             self.shared_log.log("NAV", f"Cannot open {name}: {e}", "error")
 
     def _open_editor(self, filename: str, content: str, path=None):
-        """Open built-in YAML editor dialog."""
+        """
+        Open the built-in YAML editor as a non-modal dialog. Unlike
+        the Preset/Camera Settings dialogs, a NEW dialog is built each
+        call (different mission file/content each time), so there's
+        no single instance to reuse -- but the reference must still be
+        kept alive somewhere, or Python would garbage-collect `dlg`
+        the moment this method returns, closing the window right
+        after it opens. Kept in a list rather than a single attribute
+        so editing more than one mission file at once (a real
+        workflow -- comparing two missions side by side) doesn't
+        close whichever was opened first.
+        """
         dlg = MissionEditorDialog(
             parent=self,
             filename=filename,
@@ -768,7 +793,14 @@ class NavigationPanelRGB(QWidget):
             refresh_fn=self._refresh_missions,
             sync_fn=self._sync_mission,
         )
-        dlg.exec_()
+        if not hasattr(self, "_mission_editor_dialogs"):
+            self._mission_editor_dialogs = []
+        # Drop references to any dialogs the user has already closed,
+        # so this list doesn't grow forever over a long session.
+        self._mission_editor_dialogs = [
+            d for d in self._mission_editor_dialogs if d.isVisible()]
+        self._mission_editor_dialogs.append(dlg)
+        dlg.show()
 
     def _delete_mission(self):
         """Delete selected mission after confirmation."""
@@ -1544,7 +1576,13 @@ class NavigationPanelRGB(QWidget):
 
     @pyqtSlot(str, bool, str)
     def _sm_report_done(self, out_path: str, success: bool, err: str):
-        """Called on the main thread when report generation finishes."""
+        """
+        Called on the main thread when report generation finishes.
+        Non-modal (.show(), not .exec_()) -- a notification about a
+        finished background task shouldn't block interaction with the
+        rest of the app. Kept alive via self._report_msgbox so it
+        isn't garbage-collected the instant this method returns.
+        """
         from PyQt5.QtWidgets import QMessageBox
         if success:
             msg = QMessageBox(self)
@@ -1560,7 +1598,6 @@ class NavigationPanelRGB(QWidget):
             )
             msg.setStandardButtons(QMessageBox.Ok)
             msg.setOption(QMessageBox.StandardButton.Ok)
-            msg.exec_()
         else:
             msg = QMessageBox(self)
             msg.setWindowTitle("Report Failed")
@@ -1572,7 +1609,8 @@ class NavigationPanelRGB(QWidget):
             if err:
                 msg.setDetailedText(f"Error:\n{err}")
             msg.setStandardButtons(QMessageBox.Ok)
-            msg.exec_()
+        self._report_msgbox = msg
+        msg.show()
 
     # ── Public API ────────────────────────────────────────────
 
