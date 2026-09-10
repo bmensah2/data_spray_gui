@@ -175,6 +175,107 @@ def _build_side_by_side(left, right):
     return cv2.hconcat([l_disp, divider, r_disp])
 
 
+def _iou(box_a, box_b) -> float:
+    """
+    Intersection-over-union of two (x1,y1,x2,y2) boxes. Standard
+    metric for "how much do these two boxes overlap" -- 0 for no
+    overlap, 1 for identical boxes.
+    """
+    ax1, ay1, ax2, ay2 = box_a
+    bx1, by1, bx2, by2 = box_b
+    ix1, iy1 = max(ax1, bx1), max(ay1, by1)
+    ix2, iy2 = min(ax2, bx2), min(ay2, by2)
+    iw, ih = max(0, ix2 - ix1), max(0, iy2 - iy1)
+    inter = iw * ih
+    if inter == 0:
+        return 0.0
+    area_a = max(0, ax2 - ax1) * max(0, ay2 - ay1)
+    area_b = max(0, bx2 - bx1) * max(0, by2 - by1)
+    union = area_a + area_b - inter
+    return inter / union if union > 0 else 0.0
+
+
+class SimpleObjectTracker:
+    """
+    Lightweight frame-to-frame object tracker for estimating DISTINCT
+    physical plants seen across a video, as opposed to raw detection
+    counts -- the model runs independently on every frame with no
+    memory between them, so the same plant visible for 20-30
+    consecutive frames as the camera passes over it would otherwise
+    be counted 20-30 separate times (a video with under 50 real
+    sugarbeet plants reporting 11,000+ raw detections is exactly this
+    effect, not a bug in the detection counting itself).
+
+    Matches each frame's detections against the previous frame's open
+    tracks (same class, same camera, best IoU above iou_threshold) --
+    a match means "still the same plant", a non-match starts a new
+    track and counts as a newly-seen plant. A track not matched for
+    max_age consecutive frames is considered to have left the frame
+    and is dropped (further detections in roughly that position would
+    then correctly start a NEW track, since re-entering the same
+    parked-camera view after leaving isn't the same passage).
+
+    Deliberately NOT a full tracking library (SORT/ByteTrack/etc.) --
+    this is a real, if approximate, estimate for reviewing footage,
+    not a certified count, and the two tunable parameters let the
+    operator adjust for footage where the robot moved faster or
+    slower than what the defaults assume.
+    """
+
+    def __init__(self, iou_threshold: float = 0.2, max_age: int = 5):
+        self.iou_threshold = iou_threshold
+        self.max_age = max_age
+        self._tracks = {}     # {track_id: {"class","camera","bbox","age"}}
+        self._next_id = 0
+        self.unique_counts = {}   # {class_name: count}
+
+    def update(self, detections, camera: str):
+        """
+        detections: list of Detection objects for ONE camera, ONE
+        frame (call once per camera per frame -- left and right cover
+        physically separate ground per the zone geometry, so they're
+        tracked independently and never matched against each other).
+        """
+        matched = set()
+        for det in detections:
+            box = (det.x1, det.y1, det.x2, det.y2)
+            best_id, best_iou = None, self.iou_threshold
+            for tid, track in self._tracks.items():
+                if (track["class"] != det.class_name
+                        or track["camera"] != camera
+                        or tid in matched):
+                    continue
+                iou = _iou(track["bbox"], box)
+                if iou > best_iou:
+                    best_iou, best_id = iou, tid
+
+            if best_id is not None:
+                self._tracks[best_id]["bbox"] = box
+                self._tracks[best_id]["age"] = 0
+                matched.add(best_id)
+            else:
+                tid = self._next_id
+                self._next_id += 1
+                self._tracks[tid] = {
+                    "class": det.class_name, "camera": camera,
+                    "bbox": box, "age": 0,
+                }
+                matched.add(tid)
+                self.unique_counts[det.class_name] = (
+                    self.unique_counts.get(det.class_name, 0) + 1)
+
+        # Age out tracks that weren't matched this call (this camera,
+        # this frame) -- drop once stale for too long.
+        for tid in [t for t, tr in self._tracks.items()
+                   if tr["camera"] == camera and t not in matched]:
+            self._tracks[tid]["age"] += 1
+            if self._tracks[tid]["age"] > self.max_age:
+                del self._tracks[tid]
+
+    def get_unique_counts(self) -> dict:
+        return dict(self.unique_counts)
+
+
 class DetectionSummary:
     """
     Accumulates detection statistics across a processed video/image
@@ -463,6 +564,76 @@ if __name__ == "__main__":
           f"detections_by_class=3 but frames_by_class=1 -- proves the "
           f"'Count' the UI shows is genuinely per-detection, not "
           f"per-frame")
+
+    # SimpleObjectTracker -- the actual fix for the operator's real
+    # concern: a video with under 50 real sugarbeet plants reporting
+    # 11,000+ raw detections, because the same plant gets re-detected
+    # on every one of the many consecutive frames it stays in view.
+    from core.offline_inference import SimpleObjectTracker, _iou
+
+    assert _iou((0,0,10,10), (0,0,10,10)) == 1.0
+    assert _iou((0,0,10,10), (100,100,110,110)) == 0.0
+    assert 0.0 < _iou((0,0,10,10), (5,5,15,15)) < 1.0
+    print("✓ _iou() correct for identical, disjoint, and partially "
+          "overlapping boxes")
+
+    tracker = SimpleObjectTracker(iou_threshold=0.2, max_age=3)
+    # Simulate ONE physical sugarbeet plant, slowly drifting a few
+    # pixels per frame (as it would while the camera moves over it),
+    # visible for 25 consecutive frames -- exactly the real-world
+    # scenario that inflated the raw count to 11,000+.
+    for i in range(25):
+        drift = i * 2   # a few px of motion per frame, not a jump
+        det_i = Detection(class_id=0, class_name="sugarbeet",
+                          confidence=0.9, x1=100+drift, y1=100,
+                          x2=150+drift, y2=150, camera="left")
+        tracker.update([det_i], camera="left")
+    assert tracker.get_unique_counts() == {"sugarbeet": 1}, (
+        f"one continuously-tracked plant across 25 frames must count "
+        f"as 1, not 25 -- got {tracker.get_unique_counts()}")
+    print(f"✓ ONE physical plant tracked across 25 consecutive frames "
+          f"(with slight per-frame drift, as real footage would have) "
+          f"correctly counts as 1 unique plant, not 25 raw detections "
+          f"-- this is the actual fix for the operator's "
+          f"11,000-detections-for-under-50-plants report")
+
+    # A SECOND, clearly separate plant (far away, no overlap) must
+    # count as a genuinely different one, not get merged into the first.
+    for i in range(10):
+        det_i = Detection(class_id=0, class_name="sugarbeet",
+                          confidence=0.85, x1=800, y1=100,
+                          x2=850, y2=150, camera="left")
+        tracker.update([det_i], camera="left")
+    assert tracker.get_unique_counts() == {"sugarbeet": 2}, (
+        f"a second, spatially distinct plant must add to the count, "
+        f"got {tracker.get_unique_counts()}")
+    print(f"✓ A second, spatially distinct plant correctly counts as "
+          f"a genuinely new one: {tracker.get_unique_counts()}")
+
+    # A plant that LEAVES the frame (goes unmatched past max_age) and
+    # is later followed by a DIFFERENT plant appearing at roughly the
+    # same position must count as two, not silently merge into one --
+    # confirms tracks are actually aged out, not kept forever.
+    tracker2 = SimpleObjectTracker(iou_threshold=0.2, max_age=2)
+    for i in range(5):
+        tracker2.update([Detection(class_id=0, class_name="kochia",
+                                   confidence=0.8, x1=200, y1=200,
+                                   x2=240, y2=240, camera="left")],
+                        camera="left")
+    for i in range(5):   # plant has left -- several empty frames
+        tracker2.update([], camera="left")
+    for i in range(5):   # a DIFFERENT plant appears at the same spot
+        tracker2.update([Detection(class_id=0, class_name="kochia",
+                                   confidence=0.8, x1=200, y1=200,
+                                   x2=240, y2=240, camera="left")],
+                        camera="left")
+    assert tracker2.get_unique_counts() == {"kochia": 2}, (
+        f"a plant leaving and a different one later appearing at the "
+        f"same spot must count as 2, got {tracker2.get_unique_counts()}")
+    print(f"✓ Stale tracks correctly age out after max_age missed "
+          f"frames -- a later plant at the same position counts as a "
+          f"genuinely new one, not a false rejoin: "
+          f"{tracker2.get_unique_counts()}")
 
     print()
     print("=" * 55)

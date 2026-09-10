@@ -71,6 +71,7 @@ class OfflineReviewTab(QWidget):
         self._stop_flag      = threading.Event()
         self._pause_flag     = threading.Event()
         self._show_zones     = True
+        self._tracker        = None
         self._summary       = None
         self._video_writer  = None
         self._export_path   = None
@@ -174,6 +175,32 @@ class OfflineReviewTab(QWidget):
             "uncheck to show only the detection boxes.")
         sg.addWidget(self.chk_show_zones, r, 0, 1, 3); r += 1
 
+        sg.addWidget(_muted("Tracking IoU:"), r, 0)
+        self.spn_track_iou = QDoubleSpinBox()
+        self.spn_track_iou.setRange(0.05, 0.90)
+        self.spn_track_iou.setSingleStep(0.05)
+        self.spn_track_iou.setValue(0.20)
+        self.spn_track_iou.setToolTip(
+            "How much a detection must overlap the previous frame's "
+            "box (same class) to be considered the same plant rather "
+            "than a new one. Lower = more lenient matching (fewer, "
+            "larger unique-plant counts); higher = stricter (more, "
+            "smaller counts). Only affects the 'Unique Plants' "
+            "estimate below, not raw detection drawing.")
+        sg.addWidget(self.spn_track_iou, r, 1); r += 1
+
+        sg.addWidget(_muted("Track max age:"), r, 0)
+        self.spn_track_age = QComboBox()
+        self.spn_track_age.addItems([str(n) for n in (1, 2, 3, 5, 8, 12)])
+        self.spn_track_age.setCurrentText("5")
+        self.spn_track_age.setToolTip(
+            "How many consecutive frames a plant can go undetected "
+            "before it's considered to have left the frame. Raise "
+            "this if the robot moves slowly and plants stay in view "
+            "for many frames with occasional missed detections; lower "
+            "it if plants pass through view quickly.")
+        sg.addWidget(self.spn_track_age, r, 1); r += 1
+
         llay.addWidget(src_grp)
 
         ctrl_grp = QGroupBox("Playback")
@@ -237,15 +264,19 @@ class OfflineReviewTab(QWidget):
         sg2.addWidget(self.tbl_summary)
 
         sg2.addWidget(_muted("By class:"))
-        self.tbl_by_class = QTableWidget(0, 4)
+        self.tbl_by_class = QTableWidget(0, 3)
         self.tbl_by_class.setHorizontalHeaderLabels(
-            ["Class", "Total Detections", "Frames", "Mean Conf"])
+            ["Class", "Unique Plants", "Mean Conf"])
         self.tbl_by_class.setToolTip(
-            "Total Detections: every individual detection instance "
-            "across the whole run (one frame with 3 kochia plants "
-            "counts as 3).\nFrames: how many DISTINCT frames contained "
-            "at least one detection of this class (that same frame "
-            "counts as 1 here).")
+            "Estimated distinct physical plants, not raw detection "
+            "events -- the model re-detects the same plant on every "
+            "frame it stays in view, so a plant visible for 25 frames "
+            "would otherwise count as 25. A simple frame-to-frame "
+            "tracker (see the Tracking IoU / Track max age settings "
+            "above) de-duplicates repeat detections of the same plant "
+            "into one count. This is an estimate, not a certified "
+            "count -- tune the tracking settings if it looks off for "
+            "this footage's speed.")
         self.tbl_by_class.horizontalHeader().setSectionResizeMode(
             QHeaderView.Stretch)
         self.tbl_by_class.verticalHeader().setVisible(False)
@@ -426,7 +457,7 @@ class OfflineReviewTab(QWidget):
 
         from core.offline_inference import (
             OfflineDualVideoSource, OfflineImagePairSource,
-            OfflineInferenceRunner, DetectionSummary)
+            OfflineInferenceRunner, DetectionSummary, SimpleObjectTracker)
 
         try:
             if self.cmb_source_mode.currentIndex() == 1:
@@ -449,6 +480,9 @@ class OfflineReviewTab(QWidget):
             return
 
         self._summary = DetectionSummary()
+        self._tracker = SimpleObjectTracker(
+            iou_threshold=self.spn_track_iou.value(),
+            max_age=int(self.spn_track_age.currentText()))
         self.progress.setMaximum(self._source.total_frames)
         self.progress.setValue(0)
 
@@ -493,6 +527,8 @@ class OfflineReviewTab(QWidget):
                     self._source, should_stop=self._stop_flag.is_set,
                     show_zones=self._show_zones):
                 self._summary.add(dual_result)
+                self._tracker.update(dual_result.left.detections, "left")
+                self._tracker.update(dual_result.right.detections, "right")
                 if self._export_path is not None:
                     self._write_export_frame(overlay_img)
                 self._frame_ready.emit(
@@ -564,23 +600,22 @@ class OfflineReviewTab(QWidget):
             s["total_detections"], f"{conf:.2f}" if conf else "—",
         ])
 
-        # By-class table: every class detected so far, not just the
-        # most frequent one. Rebuilt each update since the set of
+        # By-class table: estimated DISTINCT plants per class (not raw
+        # detection events -- see SimpleObjectTracker's docstring).
+        # Sorted by unique count, rebuilt each update since the set of
         # classes can grow as processing progresses (e.g. sugarbeet
-        # detected in frame 1, kochia doesn't appear until frame 40).
-        # Two distinct counts shown side by side so there's no
-        # ambiguity about which one "Count" used to mean: Total
-        # Detections (every individual instance -- 3 kochia plants in
-        # one frame counts as 3) vs Frames (distinct frames containing
-        # this class -- that same frame counts as 1).
-        by_class   = s.get("detections_by_class", {})
-        by_frames  = s.get("frames_by_class", {})
-        by_conf    = s.get("confidence_by_class", {})
-        classes  = sorted(by_class, key=by_class.get, reverse=True)
+        # seen in frame 1, kochia doesn't appear until frame 40).
+        # Mean confidence still comes from DetectionSummary (the raw
+        # per-detection confidence average) -- de-duplication doesn't
+        # change what a reasonable confidence figure for the class is.
+        unique_counts = (self._tracker.get_unique_counts()
+                         if self._tracker is not None else {})
+        by_conf = s.get("confidence_by_class", {})
+        classes = sorted(unique_counts, key=unique_counts.get, reverse=True)
         self.tbl_by_class.setRowCount(len(classes))
         for row, cls in enumerate(classes):
             for col, val in enumerate([
-                    cls, str(by_class[cls]), str(by_frames.get(cls, 0)),
+                    cls, str(unique_counts[cls]),
                     f"{by_conf.get(cls, 0):.2f}"]):
                 item = self.tbl_by_class.item(row, col)
                 if item is None:
