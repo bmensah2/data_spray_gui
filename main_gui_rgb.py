@@ -89,14 +89,6 @@ class MainWindow(QMainWindow):
 
         # Camera — one GenTL connection, shared producer thread
         self.camera = CameraPanel(self._sys_log)
-        # Register the global Start Camera button (built earlier in
-        # _build_ui(), before self.camera existed -- can't be added to
-        # camera._start_btns until now) into the same tracked-button
-        # list camera_control_bar()'s own Start/Stop buttons use, so
-        # _update_ctrl_bar() keeps its text/color in sync with actual
-        # connect/acquiring state exactly like every other instance.
-        self.camera._start_btns.append(self.hdr_btn_start_camera)
-        self.camera._update_ctrl_bar()
         self._rs_proc = None   # RealSense subprocess handle
         self.kb_nav  = KeyboardNav(self._sys_log)
 
@@ -309,6 +301,18 @@ class MainWindow(QMainWindow):
         self.hdr_btn_start_camera.clicked.connect(
             self.camera.toggle_start_stop)
         r2lay.addWidget(self.hdr_btn_start_camera)
+
+        # self.camera already exists at this point (_build_shared()
+        # runs before _build_ui() -- confirmed the hard way, this line
+        # originally sat right after self.camera's own construction
+        # instead, which ran BEFORE this button existed at all and
+        # crashed on startup). Register into the same tracked-button
+        # list camera_control_bar()'s own Start/Stop buttons use, so
+        # _update_ctrl_bar() keeps this button's text/color in sync
+        # with real connect/acquiring state exactly like every other
+        # instance.
+        self.camera._start_btns.append(self.hdr_btn_start_camera)
+        self.camera._update_ctrl_bar()
 
         # Port selector
         from PyQt5.QtWidgets import QComboBox
