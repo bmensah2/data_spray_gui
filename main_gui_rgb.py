@@ -260,13 +260,48 @@ class MainWindow(QMainWindow):
         r2lay.setContentsMargins(10, 4, 10, 4)
         r2lay.setSpacing(10)
 
-        # Warning icon + prompt
-        self.arduino_warn = QLabel("⚠  Arduino not connected — connect to enable Gantry, Pump and Nozzles")
+        # ── System checklist ───────────────────────────────────
+        # Replaces the old single-line "Arduino connected/not
+        # connected" text with a compact 4-item live checklist (Camera
+        # / Arduino / Armed / Pump) plus an overall summary line, all
+        # driven by the same state _refresh_header() already computes
+        # every tick -- no new polling, just a richer display of what
+        # was already being checked.
+        checklist_col = QWidget()
+        cl_lay = QVBoxLayout(checklist_col)
+        cl_lay.setContentsMargins(0, 0, 0, 0)
+        cl_lay.setSpacing(2)
+
+        items_row = QHBoxLayout()
+        items_row.setSpacing(14)
+
+        def _mk_check_label(initial_text):
+            lbl = QLabel(initial_text)
+            theme_manager.register_widget(
+                lbl, lambda p: (
+                    f"color:{p['amber']};font-size:10px;"
+                    f"font-family:'Noto Sans',Arial,sans-serif;"
+                    f"font-weight:bold;"))
+            return lbl
+
+        self.chk_camera  = _mk_check_label("⚠  Camera")
+        self.chk_arduino = _mk_check_label("⚠  Arduino")
+        self.chk_armed   = _mk_check_label("⚠  Armed")
+        self.chk_pump    = _mk_check_label("⚠  Pump")
+        for lbl in (self.chk_camera, self.chk_arduino,
+                    self.chk_armed, self.chk_pump):
+            items_row.addWidget(lbl)
+        items_row.addStretch()
+        cl_lay.addLayout(items_row)
+
+        self.system_summary = QLabel("⚠  SYSTEM NOT READY")
         theme_manager.register_widget(
-            self.arduino_warn, lambda p: (
-                f"color:{p['amber']};font-size:10px;"
+            self.system_summary, lambda p: (
+                f"color:{p['amber']};font-size:11px;"
                 f"font-family:'Noto Sans',Arial,sans-serif;font-weight:bold;"))
-        r2lay.addWidget(self.arduino_warn)
+        cl_lay.addWidget(self.system_summary)
+
+        r2lay.addWidget(checklist_col)
         r2lay.addStretch()
 
         # Camera Settings — global, one v4l2 configuration applied to
@@ -522,6 +557,42 @@ class MainWindow(QMainWindow):
                 self.nav_collection.set_ros_bridge(lambda: bridge)
                 self.nav_detection.set_ros_bridge(lambda: bridge)
 
+            # ── System checklist ───────────────────────────────
+            camera_on = self.camera.is_acquiring
+            actuation = self.tab2.detect._actuation
+            pump_on   = bool(actuation._pump_on) if actuation is not None else False
+
+            def _set_check(lbl, ok, label_text):
+                lbl.setText(f"{'✓' if ok else '⚠'}  {label_text}")
+                theme_manager.register_widget(
+                    lbl, lambda p, _ok=ok: (
+                        f"color:{p['green'] if _ok else p['amber']};"
+                        f"font-size:10px;"
+                        f"font-family:'Noto Sans',Arial,sans-serif;"
+                        f"font-weight:bold;"))
+
+            _set_check(self.chk_camera, camera_on, "Camera")
+            _set_check(self.chk_arduino, arduino_connected, "Arduino")
+            _set_check(self.chk_armed, self.tab2.detect.is_armed, "Armed")
+            _set_check(self.chk_pump, pump_on, "Pump")
+
+            all_ok = (camera_on and arduino_connected and
+                     self.tab2.detect.is_armed and pump_on)
+            n_ok = sum([camera_on, arduino_connected,
+                       self.tab2.detect.is_armed, pump_on])
+            if all_ok:
+                self.system_summary.setText("✓  ALL SYSTEMS ONLINE")
+                summary_key = "green"
+            else:
+                self.system_summary.setText(
+                    f"⚠  SYSTEM NOT READY  ({n_ok}/4)")
+                summary_key = "amber"
+            theme_manager.register_widget(
+                self.system_summary, lambda p, k=summary_key: (
+                    f"color:{p[k]};font-size:11px;"
+                    f"font-family:'Noto Sans',Arial,sans-serif;"
+                    f"font-weight:bold;"))
+
             # ── Arduino connection bar ────────────────────────
             self.hdr_arduino_led.set_state(
                 arduino_connected, role="green")
@@ -530,16 +601,14 @@ class MainWindow(QMainWindow):
                 mode = self.gantry.ctrl.state.firmware_mode
                 if mode == "detection":
                     mode_str = "DETECTION firmware  —  Pump + Nozzles active  |  Stepper HOLDING"
-                    palette_key = "blue"
                 else:
                     mode_str = "UNIFIED firmware  —  Full Gantry + Pump + Nozzles active"
-                    palette_key = "green"
-                self.arduino_warn.setText(
-                    f"✓  Arduino connected on {port}  —  {mode_str}")
-                theme_manager.register_widget(
-                    self.arduino_warn, lambda p, k=palette_key: (
-                        f"color:{p[k]};font-size:10px;"
-                        f"font-family:'Noto Sans',Arial,sans-serif;font-weight:bold;"))
+                # Detailed port/firmware-mode info moved from the old
+                # single-line label into a tooltip on the Arduino
+                # checklist item, rather than dropped -- still
+                # available on hover, just not cluttering the compact
+                # checklist.
+                self.chk_arduino.setToolTip(f"{port}  —  {mode_str}")
                 self.hdr_btn_connect.setText("🔌  DISCONNECT")
                 theme_manager.register_widget(
                     self.hdr_btn_connect, lambda p: (
@@ -550,13 +619,8 @@ class MainWindow(QMainWindow):
                         f"font-size:10px;font-weight:bold;}}"
                         f"QPushButton:hover{{background:{_darken(p['red'],40)};}}"))
             else:
-                self.arduino_warn.setText(
-                    "⚠  Arduino not connected"
-                    "  —  connect to enable Gantry, Pump and Nozzles")
-                theme_manager.register_widget(
-                    self.arduino_warn, lambda p: (
-                        f"color:{p['amber']};font-size:10px;"
-                        f"font-family:'Noto Sans',Arial,sans-serif;font-weight:bold;"))
+                self.chk_arduino.setToolTip(
+                    "Not connected — connect to enable Gantry, Pump and Nozzles")
                 self.hdr_btn_connect.setText("🔌  CONNECT ARDUINO")
                 theme_manager.register_widget(
                     self.hdr_btn_connect, lambda p: (
