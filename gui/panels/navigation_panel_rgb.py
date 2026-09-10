@@ -842,7 +842,8 @@ class NavigationPanelRGB(QWidget):
         path, _ = QFileDialog.getOpenFileName(
             self, "Select Mission File",
             str(MISSIONS_LOCAL),
-            "YAML files (*.yaml *.yml);;All files (*)")
+            "YAML files (*.yaml *.yml);;All files (*)",
+            options=QFileDialog.DontUseNativeDialog)
         if path:
             import shutil
             p = Path(path)

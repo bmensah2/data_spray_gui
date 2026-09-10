@@ -901,7 +901,8 @@ class DetectionPanelRGB(QWidget):
             return
         path, _ = QFileDialog.getOpenFileName(
             self, "Load RGB model weights", "",
-            "Model files (*.pt *.engine)")
+            "Model files (*.pt *.engine)",
+            options=QFileDialog.DontUseNativeDialog)
         if not path:
             return
         try:

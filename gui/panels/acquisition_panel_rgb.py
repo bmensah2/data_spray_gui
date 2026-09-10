@@ -1333,7 +1333,9 @@ class AcquisitionPanelRGB(QWidget):
 
     def _browse_folder(self):
         path = QFileDialog.getExistingDirectory(
-            self, "Select Save Folder", str(BASE_PATH))
+            self, "Select Save Folder", str(BASE_PATH),
+            options=QFileDialog.DontUseNativeDialog |
+                    QFileDialog.ShowDirsOnly)
         if path:
             self.lbl_folder.setText(path)
 

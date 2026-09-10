@@ -199,9 +199,11 @@ class DetectionSummary:
 
     def finalize(self) -> dict:
         by_class, confs = {}, []
+        by_class_confs = {}
         for cls, conf in self._all_detections:
             by_class[cls] = by_class.get(cls, 0) + 1
             confs.append(conf)
+            by_class_confs.setdefault(cls, []).append(conf)
 
         conf_stats = {}
         if confs:
@@ -213,6 +215,15 @@ class DetectionSummary:
             if len(confs) > 1:
                 conf_stats["stdev"] = round(statistics.stdev(confs), 3)
 
+        # Per-class mean confidence -- lets the UI show a genuine
+        # per-class breakdown (count + confidence) rather than just an
+        # overall confidence figure that hides which class it's really
+        # describing.
+        by_class_mean_conf = {
+            cls: round(statistics.mean(vals), 3)
+            for cls, vals in by_class_confs.items()
+        }
+
         return {
             "frames_processed":       self.frames_processed,
             "frames_with_detection":  self.frames_with_detection,
@@ -221,6 +232,7 @@ class DetectionSummary:
                 if self.frames_processed else 0.0),
             "total_detections":       len(self._all_detections),
             "detections_by_class":    by_class,
+            "confidence_by_class":    by_class_mean_conf,
             "confidence_stats":       conf_stats,
         }
 
@@ -254,12 +266,15 @@ class OfflineInferenceRunner:
         self.engine = RGBDetectionEngine(self.cfg)
 
     def process(self, source, spray_states=(False, False, False),
-                should_stop=None):
+                should_stop=None, show_zones=True):
         """
         source: an OfflineDualVideoSource or OfflineImagePairSource
         (anything with read_pair()/total_frames/fps).
         should_stop: optional callable returning True to abort early
         (wired to a GUI Stop button).
+        show_zones: pass through to draw_detection_overlay() -- False
+        skips drawing zone boundaries/nozzle centerlines, showing only
+        the detection boxes (see that function's docstring).
 
         Yields (frame_idx, overlay_img, dual_result) per frame. Caller
         is responsible for calling source.close() when done -- kept
@@ -298,7 +313,7 @@ class OfflineInferenceRunner:
                 # combined side-by-side frame is typically viewed at a
                 # different scale in the offline review UI, and the
                 # live-tuned size (13px/1px) read as too small there.
-                font_size=20, box_thick=2)
+                font_size=20, box_thick=2, show_zones=show_zones)
 
             yield frame_idx, overlay_img, dual_result
             frame_idx += 1
@@ -396,6 +411,9 @@ if __name__ == "__main__":
     assert result["total_detections"] == 3
     assert result["detections_by_class"] == {"kochia": 3}
     assert result["confidence_stats"]["min"] == 0.8
+    assert result["confidence_by_class"]["kochia"] == round((0.8+0.85+0.9)/3, 3)
+    print(f"✓ Per-class mean confidence also correctly computed: "
+          f"{result['confidence_by_class']}")
     print(f"✓ DetectionSummary correctly aggregates: {result}")
 
     print()

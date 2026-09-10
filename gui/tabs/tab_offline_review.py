@@ -28,6 +28,8 @@ from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QGroupBox,
     QLabel, QPushButton, QLineEdit, QComboBox, QDoubleSpinBox,
     QFileDialog, QProgressBar, QSlider, QMessageBox, QTabWidget,
+    QCheckBox, QTableWidget, QHeaderView, QAbstractItemView,
+    QTableWidgetItem,
 )
 from PyQt5.QtCore import Qt, pyqtSignal, QTimer
 from PyQt5.QtGui import QImage, QPixmap
@@ -68,6 +70,7 @@ class OfflineReviewTab(QWidget):
         self._worker_thread  = None
         self._stop_flag      = threading.Event()
         self._pause_flag     = threading.Event()
+        self._show_zones     = True
         self._summary       = None
         self._video_writer  = None
         self._export_path   = None
@@ -163,6 +166,14 @@ class OfflineReviewTab(QWidget):
         self.spn_conf.setValue(0.45)
         sg.addWidget(self.spn_conf, r, 1); r += 1
 
+        self.chk_show_zones = QCheckBox("Show nozzle/zone overlay")
+        self.chk_show_zones.setChecked(True)
+        self.chk_show_zones.setToolTip(
+            "Zone boundaries and nozzle centerlines aren't meaningful "
+            "during offline review (nothing is actually spraying) -- "
+            "uncheck to show only the detection boxes.")
+        sg.addWidget(self.chk_show_zones, r, 0, 1, 3); r += 1
+
         llay.addWidget(src_grp)
 
         ctrl_grp = QGroupBox("Playback")
@@ -221,9 +232,29 @@ class OfflineReviewTab(QWidget):
             "Counts from this footage only — not an accuracy metric "
             "(no ground truth). See Model Evaluation for that."))
         self.tbl_summary = build_stats_table(
-            ["Frames", "With Det.", "Total Det.", "Top Class", "Mean Conf"])
-        self.tbl_summary.setMinimumHeight(80)
+            ["Frames", "With Det.", "Total Det.", "Mean Conf"])
+        self.tbl_summary.setMinimumHeight(56)
         sg2.addWidget(self.tbl_summary)
+
+        sg2.addWidget(_muted("By class:"))
+        self.tbl_by_class = QTableWidget(0, 3)
+        self.tbl_by_class.setHorizontalHeaderLabels(
+            ["Class", "Count", "Mean Conf"])
+        self.tbl_by_class.horizontalHeader().setSectionResizeMode(
+            QHeaderView.Stretch)
+        self.tbl_by_class.verticalHeader().setVisible(False)
+        self.tbl_by_class.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.tbl_by_class.setSelectionMode(QAbstractItemView.NoSelection)
+        self.tbl_by_class.setMinimumHeight(120)
+        theme_manager.register_widget(
+            self.tbl_by_class, lambda p: (
+                f"QTableWidget{{background:{p['bg2']};color:{p['text']};"
+                f"gridline-color:{p['border2']};"
+                f"font-family:'Noto Sans',Arial,sans-serif;font-size:10px;}}"
+                f"QHeaderView::section{{background:{p['bg0']};"
+                f"color:{p['muted']};padding:3px;border:none;"
+                f"font-size:9px;}}"))
+        sg2.addWidget(self.tbl_by_class)
         llay.addWidget(stats_grp)
 
         llay.addStretch()
@@ -316,16 +347,20 @@ class OfflineReviewTab(QWidget):
 
     def _browse_file(self, target_edit, filter_str="Video files (*.mp4 *.avi)"):
         if self.cmb_source_mode.currentIndex() == 1 and target_edit is self.ed_left:
-            path = QFileDialog.getExistingDirectory(self, "Select image folder")
+            path = QFileDialog.getExistingDirectory(
+                self, "Select image folder", "",
+                QFileDialog.DontUseNativeDialog | QFileDialog.ShowDirsOnly)
         else:
             path, _ = QFileDialog.getOpenFileName(
-                self, "Select file", "", filter_str)
+                self, "Select file", "", filter_str,
+                options=QFileDialog.DontUseNativeDialog)
         if path:
             target_edit.setText(path)
 
     def _browse_export_path(self):
         path, _ = QFileDialog.getSaveFileName(
-            self, "Save annotated video as", "", "MP4 video (*.mp4)")
+            self, "Save annotated video as", "", "MP4 video (*.mp4)",
+            options=QFileDialog.DontUseNativeDialog)
         if path:
             # QFileDialog doesn't always append the filter's extension
             # if the operator types a name without one -- enforced here
@@ -429,6 +464,10 @@ class OfflineReviewTab(QWidget):
 
         self._stop_flag.clear()
         self._pause_flag.clear()
+        # Captured here (main thread) rather than read from inside
+        # _worker_run() -- Qt widget state shouldn't be read from a
+        # background thread even for a simple property like this.
+        self._show_zones = self.chk_show_zones.isChecked()
         self.btn_start.setEnabled(False)
         self.btn_pause.setEnabled(True)
         self.btn_pause.setText("⏸  PAUSE")
@@ -445,7 +484,8 @@ class OfflineReviewTab(QWidget):
         success, message = True, ""
         try:
             for frame_idx, overlay_img, dual_result in self._runner.process(
-                    self._source, should_stop=self._stop_flag.is_set):
+                    self._source, should_stop=self._stop_flag.is_set,
+                    show_zones=self._show_zones):
                 self._summary.add(dual_result)
                 if self._export_path is not None:
                     self._write_export_frame(overlay_img)
@@ -512,13 +552,30 @@ class OfflineReviewTab(QWidget):
         self.lbl_frame_pos.setText(f"Frame: {frame_idx + 1} / {total}")
 
         s = self._summary.finalize()
-        by_class = s.get("detections_by_class", {})
-        top_class = max(by_class, key=by_class.get) if by_class else "—"
         conf = s.get("confidence_stats", {}).get("mean", 0.0)
         update_stats_row(self.tbl_summary, [
             s["frames_processed"], s["frames_with_detection"],
-            s["total_detections"], top_class, f"{conf:.2f}" if conf else "—",
+            s["total_detections"], f"{conf:.2f}" if conf else "—",
         ])
+
+        # By-class table: every class detected so far, not just the
+        # most frequent one. Rebuilt each update since the set of
+        # classes can grow as processing progresses (e.g. sugarbeet
+        # detected in frame 1, kochia doesn't appear until frame 40).
+        by_class = s.get("detections_by_class", {})
+        by_conf  = s.get("confidence_by_class", {})
+        classes  = sorted(by_class, key=by_class.get, reverse=True)
+        self.tbl_by_class.setRowCount(len(classes))
+        for row, cls in enumerate(classes):
+            for col, val in enumerate([
+                    cls, str(by_class[cls]),
+                    f"{by_conf.get(cls, 0):.2f}"]):
+                item = self.tbl_by_class.item(row, col)
+                if item is None:
+                    item = QTableWidgetItem()
+                    item.setTextAlignment(Qt.AlignCenter)
+                    self.tbl_by_class.setItem(row, col, item)
+                item.setText(val)
 
     def _on_processing_done(self, success, message):
         self.btn_start.setEnabled(True)

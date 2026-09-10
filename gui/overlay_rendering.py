@@ -20,7 +20,7 @@ from gui.frame_text import put_text, text_size
 
 
 def draw_detection_overlay(img, dual_result, spray_states, cfg,
-                           font_size=13, box_thick=1):
+                           font_size=13, box_thick=1, show_zones=True):
     """
     Draw zone boundaries and detection boxes on a side-by-side display
     image (DualCameraPanel._build_display()'s Side-by-Side output).
@@ -39,6 +39,13 @@ def draw_detection_overlay(img, dual_result, spray_states, cfg,
     silently looking too small there -- defaults are unchanged so
     every existing call (live Detection tab) renders identically to
     before.
+
+    show_zones: when False, skips drawing zone boundaries and nozzle
+    centerlines entirely -- detection boxes still draw normally. For
+    offline review, where no spraying is actually happening and the
+    zone/nozzle lines can be visual clutter when the point is just
+    reviewing detections. Defaults to True (unchanged for the live
+    Detection tab, which never passes this).
 
     Style constants — all in one place for easy tuning:
       FONT_SIZE   : 13   — Noto Sans (via gui/frame_text.py), matches
@@ -95,6 +102,8 @@ def draw_detection_overlay(img, dual_result, spray_states, cfg,
 
     for dx1, dx2, zlbl, noz_cx, noz_idx, color in \
             left_zones + right_zones:
+        if not show_zones:
+            continue
         active = spray_states[noz_idx] if noz_idx < 3 else False
 
         # Zone boundary — thin line, thicker + brighter when active
