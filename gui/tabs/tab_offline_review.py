@@ -63,10 +63,11 @@ class OfflineReviewTab(QWidget):
         # a live link. None if constructed standalone (e.g. tests).
         self.detect_ref = detect_ref
 
-        self._runner       = None
-        self._source        = None
-        self._worker_thread = None
-        self._stop_flag     = threading.Event()
+        self._runner        = None
+        self._source         = None
+        self._worker_thread  = None
+        self._stop_flag      = threading.Event()
+        self._pause_flag     = threading.Event()
         self._summary       = None
         self._video_writer  = None
         self._export_path   = None
@@ -172,6 +173,12 @@ class OfflineReviewTab(QWidget):
         theme_manager.register_button(self.btn_start, "green")
         self.btn_start.clicked.connect(self._start_processing)
         btn_row.addWidget(self.btn_start)
+
+        self.btn_pause = QPushButton("⏸  PAUSE")
+        theme_manager.register_button(self.btn_pause, "blue")
+        self.btn_pause.setEnabled(False)
+        self.btn_pause.clicked.connect(self._toggle_pause)
+        btn_row.addWidget(self.btn_pause)
 
         self.btn_stop = QPushButton("⏹  STOP")
         theme_manager.register_button(self.btn_stop, "dim_red")
@@ -320,6 +327,14 @@ class OfflineReviewTab(QWidget):
         path, _ = QFileDialog.getSaveFileName(
             self, "Save annotated video as", "", "MP4 video (*.mp4)")
         if path:
+            # QFileDialog doesn't always append the filter's extension
+            # if the operator types a name without one -- enforced here
+            # since cv2.VideoWriter's mp4v codec needs a matching .mp4
+            # container to write a valid, playable file (a missing/
+            # wrong extension is one way "export runs with no error,
+            # but nothing plays back" can happen).
+            if not path.lower().endswith(".mp4"):
+                path += ".mp4"
             self.ed_export_path.setText(path)
 
     def _use_armed_model(self):
@@ -397,6 +412,14 @@ class OfflineReviewTab(QWidget):
         self.progress.setValue(0)
 
         export_path = self.ed_export_path.text().strip()
+        if export_path and not export_path.lower().endswith(".mp4"):
+            export_path += ".mp4"
+            self.ed_export_path.setText(export_path)
+        if export_path:
+            # cv2.VideoWriter also silently fails to open if the target
+            # folder doesn't exist yet -- created here rather than
+            # requiring the operator to pre-create it by hand.
+            Path(export_path).parent.mkdir(parents=True, exist_ok=True)
         self._video_writer = None
         self._export_path  = export_path or None
         # VideoWriter needs a fixed frame size known up front, which
@@ -405,7 +428,10 @@ class OfflineReviewTab(QWidget):
         # of guessing a size here.
 
         self._stop_flag.clear()
+        self._pause_flag.clear()
         self.btn_start.setEnabled(False)
+        self.btn_pause.setEnabled(True)
+        self.btn_pause.setText("⏸  PAUSE")
         self.btn_stop.setEnabled(True)
         self.log.log("REVIEW", f"Processing {self._source.total_frames} "
                      f"frame(s)…", "info")
@@ -425,10 +451,27 @@ class OfflineReviewTab(QWidget):
                     self._write_export_frame(overlay_img)
                 self._frame_ready.emit(
                     frame_idx, total, overlay_img, dual_result)
+                # Pause point -- checked AFTER this frame is fully
+                # written/emitted (so a paused frame is never left
+                # half-processed), blocking here until RESUME is
+                # pressed or STOP breaks out of the wait too.
+                while (self._pause_flag.is_set()
+                      and not self._stop_flag.is_set()):
+                    time.sleep(0.1)
         except Exception as e:
             success, message = False, str(e)
         finally:
             self._processing_done.emit(success, message)
+
+    def _toggle_pause(self):
+        if self._pause_flag.is_set():
+            self._pause_flag.clear()
+            self.btn_pause.setText("⏸  PAUSE")
+            self.log.log("REVIEW", "Resumed", "info")
+        else:
+            self._pause_flag.set()
+            self.btn_pause.setText("▶  RESUME")
+            self.log.log("REVIEW", "Paused", "info")
 
     def _write_export_frame(self, overlay_img):
         # VideoWriter needs a fixed frame size decided up front; only
@@ -441,6 +484,21 @@ class OfflineReviewTab(QWidget):
             fps = self._source.fps if self._source.fps > 0 else 10.0
             self._video_writer = cv2.VideoWriter(
                 self._export_path, fourcc, fps, (w, h))
+            # cv2.VideoWriter does NOT raise on failure to open (e.g. a
+            # bad path, missing directory, or an unsupported codec/
+            # container combination) -- it silently returns a writer
+            # whose .write() calls do nothing at all, which is exactly
+            # how an export can appear to "run" with no error yet
+            # produce no file. Raising here instead routes the failure
+            # through _worker_run()'s existing exception handling
+            # (-> _processing_done signal), so it's surfaced to the
+            # operator instead of failing invisibly.
+            if not self._video_writer.isOpened():
+                self._video_writer = None
+                raise IOError(
+                    f"Could not open video writer for export path "
+                    f"'{self._export_path}' -- check the folder exists "
+                    f"and the path ends in .mp4")
         self._video_writer.write(overlay_img)
 
     def _stop_processing(self):
@@ -464,12 +522,23 @@ class OfflineReviewTab(QWidget):
 
     def _on_processing_done(self, success, message):
         self.btn_start.setEnabled(True)
+        self.btn_pause.setEnabled(False)
+        self.btn_pause.setText("⏸  PAUSE")
         self.btn_stop.setEnabled(False)
         if self._video_writer is not None:
             self._video_writer.release()
             self._video_writer = None
-            self.log.log("REVIEW", f"Annotated video saved: "
-                         f"{self._export_path}", "ok")
+            if success:
+                self.log.log("REVIEW", f"Annotated video saved: "
+                             f"{self._export_path}", "ok")
+            else:
+                # A writer existed but processing errored out partway --
+                # whatever frames were written before the error ARE on
+                # disk (release() above flushes them), but calling this
+                # a clean "saved" would be misleading when it's really
+                # a partial/incomplete export.
+                self.log.log("REVIEW", f"Export incomplete (processing "
+                             f"stopped early): {self._export_path}", "warn")
         if self._source is not None:
             self._source.close()
             self._source = None

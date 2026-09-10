@@ -52,8 +52,26 @@ class OfflineDualVideoSource:
     def __init__(self, left_path, right_path):
         self.left_path  = Path(left_path)
         self.right_path = Path(right_path)
-        self._left_cap  = cv2.VideoCapture(str(self.left_path))
-        self._right_cap = cv2.VideoCapture(str(self.right_path))
+
+        # Validate both paths exist BEFORE ever calling cv2.VideoCapture
+        # -- an empty or missing path fed straight to VideoCapture can
+        # raise a cryptic OpenCV assertion from deep inside its
+        # image-sequence fallback backend (cap_images.cpp) rather than
+        # a clear error, which is confusing to debug from the outside.
+        # Catching it here up front means the operator sees "file does
+        # not exist" instead of a raw C++ assertion trace.
+        if not self.left_path.exists():
+            raise IOError(f"Left video file does not exist: {self.left_path}")
+        if not self.right_path.exists():
+            raise IOError(f"Right video file does not exist: {self.right_path}")
+
+        try:
+            self._left_cap  = cv2.VideoCapture(str(self.left_path))
+            self._right_cap = cv2.VideoCapture(str(self.right_path))
+        except cv2.error as e:
+            raise IOError(
+                f"OpenCV could not open the video pair "
+                f"({self.left_path.name} / {self.right_path.name}): {e}")
 
         if not self._left_cap.isOpened():
             raise IOError(f"Could not open left video: {self.left_path}")
