@@ -610,7 +610,12 @@ class AcquisitionPanelRGB(QWidget):
 
     Drop-in replacement for AcquisitionPanel used in tab_collection
     and tab_detection. Public API is identical:
-      panel.subtabs              → QTabWidget (for tab_detection camera tab)
+      panel.subtabs              → QTabWidget, Capture only (camera
+                                    settings moved to MainWindow's
+                                    global dialog -- see settings_panel)
+      panel.settings_panel       → the camera-settings widget (already
+                                    scroll-wrapped), for MainWindow's
+                                    top-toolbar "Camera Settings" button
       panel.enable_camera_controls(bool)
       panel.cleanup()
       panel.reset_session()
@@ -650,8 +655,19 @@ class AcquisitionPanelRGB(QWidget):
         lay = QVBoxLayout(self)
         lay.setContentsMargins(0, 0, 0, 0)
         self.subtabs = QTabWidget()
-        self.subtabs.addTab(
-            _scroll(self._tab_cam_settings()), "⚙ Camera")
+        # NOTE: camera settings are deliberately NOT a subtab here
+        # anymore. They used to be embedded both here (Data Collection
+        # tab) and, redundantly, as a second "quick controls" mini-panel
+        # in Detection tab -- and since camera settings are genuinely
+        # global hardware state (one v4l2 configuration that applies
+        # to both cameras regardless of which tab is active), they now
+        # live in a single dialog opened from MainWindow's top toolbar
+        # (see main_gui_rgb.py's "Camera Settings" button), available
+        # from any tab instead of duplicated in two. self.settings_panel
+        # is still built here (constructing self.camera_settings as a
+        # side effect) so MainWindow can grab it; it's just not added
+        # to self.subtabs.
+        self.settings_panel = _scroll(self._tab_cam_settings())
         self.subtabs.addTab(
             _scroll(self._tab_capture()),      "💾 Capture")
         lay.addWidget(self.subtabs)

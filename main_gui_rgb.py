@@ -265,6 +265,25 @@ class MainWindow(QMainWindow):
         r2lay.addWidget(self.arduino_warn)
         r2lay.addStretch()
 
+        # Camera Settings — global, one v4l2 configuration applied to
+        # both cameras (see gui/panels/acquisition_panel_rgb.py's
+        # CameraSettingsWidget), reachable from any tab rather than
+        # embedded per-tab. Used to live inside Data Collection tab
+        # only, plus a second, redundant "quick controls" copy inside
+        # Detection tab -- both removed in favor of this one button.
+        self.hdr_btn_camera_settings = QPushButton("📷  Camera Settings")
+        theme_manager.register_widget(
+            self.hdr_btn_camera_settings, lambda p: (
+                f"QPushButton{{background:{p['input_bg']};color:{p['text']};"
+                f"border:1px solid {p['border']};border-radius:4px;"
+                f"padding:4px 12px;font-family:'Noto Sans',Arial,sans-serif;"
+                f"font-size:10px;}}"
+                f"QPushButton:hover{{background:{p['btn_hover']};}}"))
+        self.hdr_btn_camera_settings.setFixedHeight(26)
+        self.hdr_btn_camera_settings.clicked.connect(
+            self._open_camera_settings_dialog)
+        r2lay.addWidget(self.hdr_btn_camera_settings)
+
         # Port selector
         from PyQt5.QtWidgets import QComboBox
         self.hdr_port_combo = QComboBox()
@@ -387,6 +406,32 @@ class MainWindow(QMainWindow):
             self._sys_log.log(
                 "CAMERA", "RealSense viewer closed", "info")
 
+
+    def _open_camera_settings_dialog(self):
+        """
+        Open (or re-show) the global Camera Settings dialog, wrapping
+        self.acq.settings_panel -- the same widget/state both Data
+        Collection and Detection tabs used to embed independently.
+        Created once and reused on subsequent clicks (show/raise/
+        activate) rather than rebuilt every time, since the settings
+        panel is a single long-lived widget, not something meant to
+        be reparented repeatedly.
+        """
+        if getattr(self, "_camera_settings_dialog", None) is None:
+            from PyQt5.QtWidgets import QDialog, QVBoxLayout as _QVBoxLayout
+            dlg = QDialog(self)
+            dlg.setWindowTitle("Camera Settings — applies to both cameras")
+            dlg.setMinimumSize(480, 640)
+            theme_manager.register_widget(
+                dlg, lambda p: f"background-color:{p['bg']};")
+            lay = _QVBoxLayout(dlg)
+            lay.setContentsMargins(0, 0, 0, 0)
+            lay.addWidget(self.acq.settings_panel)
+            self._camera_settings_dialog = dlg
+
+        self._camera_settings_dialog.show()
+        self._camera_settings_dialog.raise_()
+        self._camera_settings_dialog.activateWindow()
 
     def _refresh_arduino_ports(self):
         """Populate port dropdown from GantryController.list_ports()."""

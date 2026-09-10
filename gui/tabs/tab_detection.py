@@ -142,11 +142,11 @@ class DetectionTab(QWidget):
         left_tabs = QTabWidget()
         left_tabs.addTab(self.spray,  "💉 Spray")
         left_tabs.addTab(self.detect, "🎯 Detect")
-        # Camera settings — use a dedicated widget that references
-        # the shared acq but does NOT reparent its internal subtab widget.
-        # Reparenting steals the widget from Tab 1 leaving it empty.
-        cam_settings_w = self._build_cam_settings_tab()
-        left_tabs.addTab(cam_settings_w, "⚙ Camera")
+        # NOTE: this used to also have a redundant "⚙ Camera" mini-panel
+        # here (preset/read/apply shortcuts calling into self.acq) --
+        # removed now that camera settings live in one global dialog
+        # (MainWindow's top-toolbar "Camera Settings" button) reachable
+        # from any tab, so there's nothing left to duplicate here.
 
         left_w = QWidget()
         left_w.setMinimumWidth(400)
@@ -226,107 +226,6 @@ class DetectionTab(QWidget):
             LogPanel(self.log,
                      sources=["DETECT","GANTRY","NAV","SYS"],
                      height=110))
-
-    def _build_cam_settings_tab(self) -> QWidget:
-        """
-        Lightweight camera settings widget for the Detection tab.
-        Mirrors the shared acq panel but is a separate widget instance
-        so it does NOT steal the subtab from Data Collection tab.
-
-        Shows preset buttons + Read/Apply controls that operate on
-        the same physical cameras via v4l2-ctl.
-        """
-        from PyQt5.QtWidgets import (
-            QScrollArea, QGroupBox, QGridLayout, QSpinBox
-        )
-        from gui.style import BTN_BLUE, BTN_GREEN, BTN_AMBER
-
-        w = QWidget()
-        outer = QVBoxLayout(w)
-        outer.setContentsMargins(4, 4, 4, 4)
-        outer.setSpacing(6)
-
-        # ── Info label ────────────────────────────────────────
-        info = QLabel(
-            "Camera settings are shared with Data Collection tab. "
-            "Changes here apply to both tabs immediately.")
-        theme_manager.register_widget(
-            info, lambda p: (
-                f"color:{_lighten(p['green'],10)};font-size:9px;"
-                f"font-family:'Noto Sans',Arial,sans-serif;"
-                f"padding:4px;background:{_darken(p['green'],55)};"
-                f"border-radius:3px;"))
-        info.setWordWrap(True)
-        outer.addWidget(info)
-
-        # ── Preset buttons ────────────────────────────────────
-        grp = QGroupBox("Lighting Presets")
-        theme_manager.register_widget(
-            grp, lambda p: (
-                f"QGroupBox{{border:1px solid {_darken(p['green'],30)};"
-                f"border-radius:4px;margin-top:8px;color:{p['green']};"
-                f"font-size:10px;}}"
-                f"QGroupBox::title{{subcontrol-origin:margin;padding:0 4px;}}"))
-        glay = QVBoxLayout(grp)
-
-        btn_outdoor = QPushButton("🌤  Outdoor / Field  (exp=5)")
-        theme_manager.register_widget(
-            btn_outdoor, lambda p: (
-                f"QPushButton{{background:{_darken(p['green'],45)};"
-                f"color:{_lighten(p['green'],10)};"
-                f"border:1px solid {_darken(p['green'],25)};border-radius:4px;"
-                f"padding:6px;font-family:'Noto Sans',Arial,sans-serif;"
-                f"font-size:10px;}}"
-                f"QPushButton:hover{{background:{_darken(p['green'],35)};}}"))
-        btn_outdoor.clicked.connect(
-            lambda: getattr(self.acq, "_preset_outdoor", lambda: None)())
-        glay.addWidget(btn_outdoor)
-
-        btn_cloudy = QPushButton("☁  Cloudy / Shade  (exp=80)")
-        theme_manager.register_widget(
-            btn_cloudy, lambda p: (
-                f"QPushButton{{background:{_darken(p['blue'],45)};"
-                f"color:{_lighten(p['blue'],10)};"
-                f"border:1px solid {_darken(p['blue'],25)};border-radius:4px;"
-                f"padding:6px;font-family:'Noto Sans',Arial,sans-serif;"
-                f"font-size:10px;}}"
-                f"QPushButton:hover{{background:{_darken(p['blue'],35)};}}"))
-        btn_cloudy.clicked.connect(
-            lambda: getattr(self.acq, "_preset_cloudy", lambda: None)())
-        glay.addWidget(btn_cloudy)
-
-        btn_indoor = QPushButton("💡  Indoor / Lab  (exp=300)")
-        theme_manager.register_widget(
-            btn_indoor, lambda p: (
-                f"QPushButton{{background:{_darken(p['amber'],55)};"
-                f"color:{_lighten(p['amber'],5)};"
-                f"border:1px solid {_darken(p['amber'],30)};border-radius:4px;"
-                f"padding:6px;font-family:'Noto Sans',Arial,sans-serif;"
-                f"font-size:10px;}}"
-                f"QPushButton:hover{{background:{_darken(p['amber'],45)};}}"))
-        btn_indoor.clicked.connect(
-            lambda: getattr(self.acq, "_preset_indoor", lambda: None)())
-        glay.addWidget(btn_indoor)
-
-        outer.addWidget(grp)
-
-        # ── Read/Apply shortcuts ──────────────────────────────
-        btn_read = QPushButton("↻  Read from camera")
-        btn_read.setStyleSheet(BTN_BLUE)
-        btn_read.clicked.connect(
-            lambda: getattr(self.acq, "_refresh_all", lambda: None)())
-        outer.addWidget(btn_read)
-
-        btn_apply = QPushButton("✓  Apply current settings")
-        btn_apply.setStyleSheet(BTN_GREEN)
-        btn_apply.clicked.connect(
-            lambda: getattr(self.acq, "_apply_all", lambda: None)())
-        outer.addWidget(btn_apply)
-
-        outer.addWidget(_muted(
-            "Full camera settings available in Data Collection tab."))
-        outer.addStretch()
-        return w
 
     def _detection_arm_bar(self) -> QWidget:
         """
