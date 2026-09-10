@@ -53,9 +53,15 @@ class OfflineReviewTab(QWidget):
     _frame_ready = pyqtSignal(int, int, object, object)  # idx, total, overlay_img, dual_result
     _processing_done = pyqtSignal(bool, str)              # success, message
 
-    def __init__(self, shared_log: UnifiedLog, parent=None):
+    def __init__(self, shared_log: UnifiedLog, detect_ref=None, parent=None):
         super().__init__(parent)
         self.log = shared_log
+        # Optional reference to the live DetectionPanelRGB (Detection
+        # tab), used only by the "Use Armed Model" convenience button
+        # below -- reads its currently-armed model path/mode/
+        # thresholds into this tab's own fields, a one-time copy, not
+        # a live link. None if constructed standalone (e.g. tests).
+        self.detect_ref = detect_ref
 
         self._runner       = None
         self._source        = None
@@ -134,6 +140,15 @@ class OfflineReviewTab(QWidget):
         btn_model.clicked.connect(lambda: self._browse_file(
             self.ed_model, "Model files (*.pt *.engine)"))
         sg.addWidget(btn_model, r, 2); r += 1
+
+        btn_use_armed = QPushButton("📋  Use Armed Model (from Detection tab)")
+        btn_use_armed.setToolTip(
+            "Copy the model path, mode, and confidence threshold "
+            "currently armed on Detection tab into the fields above. "
+            "A one-time copy, not a live link -- you can still edit "
+            "them afterward to review with a different model.")
+        btn_use_armed.clicked.connect(self._use_armed_model)
+        sg.addWidget(btn_use_armed, r, 0, 1, 3); r += 1
 
         sg.addWidget(_muted("Mode:"), r, 0)
         self.cmb_model_mode = QComboBox()
@@ -302,6 +317,37 @@ class OfflineReviewTab(QWidget):
             self, "Save annotated video as", "", "MP4 video (*.mp4)")
         if path:
             self.ed_export_path.setText(path)
+
+    def _use_armed_model(self):
+        """
+        Copy Detection tab's currently-armed model path/mode/
+        confidence into this tab's own fields. A one-time copy (read
+        once, editable afterward), not a live link -- offline review
+        stays a fully separate RGBDetectionEngine instance from the
+        live one, so reviewing footage can never interfere with an
+        active field session, and so a different model can still be
+        picked afterward if the point of this run is exactly to
+        compare model versions on the same footage.
+        """
+        if self.detect_ref is None:
+            self.log.log("REVIEW", "No live Detection tab reference "
+                         "available", "warn")
+            return
+        cfg = getattr(self.detect_ref, "_cfg", None)
+        if cfg is None:
+            self.log.log("REVIEW", "Detection tab is not armed — "
+                         "nothing to copy yet", "warn")
+            return
+
+        mode_val = cfg.session.detection_mode.value   # "weed" or "cls"
+        model_path = (cfg.model.cls_rgb_pt if mode_val == "cls"
+                      else cfg.model.weed_rgb_pt)
+        self.ed_model.setText(str(model_path))
+        self.cmb_model_mode.setCurrentIndex(1 if mode_val == "cls" else 0)
+        self.spn_conf.setValue(cfg.model.confidence_threshold)
+        self.log.log("REVIEW", f"Copied armed model: {model_path} "
+                     f"({mode_val}, conf={cfg.model.confidence_threshold})",
+                     "ok")
 
     # ── Processing ────────────────────────────────────────────
 

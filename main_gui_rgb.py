@@ -145,7 +145,7 @@ class MainWindow(QMainWindow):
             self.camera, self.nav_detection, self.gantry,
             acq=self.acq)
         self.tab3 = AnalysisTab(self.gantry, self.tab2.detect)
-        self.tab4 = OfflineReviewTab(self._sys_log)
+        self.tab4 = OfflineReviewTab(self._sys_log, detect_ref=self.tab2.detect)
 
         # ── Cross-tab movement lock ─────────────────────────────
         self.nav_detection.set_movement_controls_enabled(False)
