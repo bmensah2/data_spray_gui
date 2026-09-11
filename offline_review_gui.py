@@ -52,10 +52,6 @@ class OfflineReviewWindow(QMainWindow):
     """
     Thin QMainWindow wrapping OfflineReviewTab as the sole central
     widget -- no other tabs, no hardware panels, no cross-tab state.
-    detect_ref is None here (there is no live Detection tab to pull
-    an armed model from in a standalone app); the tab's own "Use
-    Armed Model" button already handles that gracefully with a clear
-    log warning rather than crashing.
     """
 
     def __init__(self):
@@ -64,7 +60,7 @@ class OfflineReviewWindow(QMainWindow):
         self.resize(1500, 950)
 
         self.log = UnifiedLog()
-        self.tab = OfflineReviewTab(self.log, detect_ref=None)
+        self.tab = OfflineReviewTab(self.log)
         self.setCentralWidget(self.tab)
 
         theme_manager.register_widget(
