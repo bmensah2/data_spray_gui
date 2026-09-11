@@ -654,11 +654,8 @@ class DetectionPanelRGB(QWidget):
                 "DETECT", "ROSBridge disabled — pose unavailable", "info")
             self._odom = None
 
-        session_id = (
-            f"gui_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}"
-            f"_{cfg.session.detection_mode.value}"
-        )
         session_name = (self._session_meta or {}).get("session_name", "").strip()
+        safe_name = ""
         if session_name:
             # Sanitize for safe use in a folder/file name -- spaces and
             # anything not alphanumeric/dash/underscore become
@@ -666,8 +663,29 @@ class DetectionPanelRGB(QWidget):
             # produce a broken or surprising path.
             import re as _re
             safe_name = _re.sub(r"[^A-Za-z0-9_-]+", "_", session_name).strip("_")
-            if safe_name:
-                session_id = f"{session_id}_{safe_name}"
+
+        if safe_name:
+            # A named session uses the name ALONE -- no timestamp/mode
+            # prefix -- since the whole point of naming it was a
+            # clean, readable folder like "Spraying_in_Grand_Farm"
+            # rather than "gui_20260911_150208_weed_Spraying_in_Grand_Farm".
+            # Collision-safe rather than a silent overwrite, though: if
+            # that exact name was already used (folder already exists),
+            # append "_2", "_3", ... until a free one is found, instead
+            # of quietly destroying a previous session's logs.
+            session_id = safe_name
+            sessions_root = cfg.logging.base_dir / "sessions"
+            if (sessions_root / session_id).exists():
+                n = 2
+                while (sessions_root / f"{safe_name}_{n}").exists():
+                    n += 1
+                session_id = f"{safe_name}_{n}"
+        else:
+            # No name given -- unchanged, timestamp-based default.
+            session_id = (
+                f"gui_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}"
+                f"_{cfg.session.detection_mode.value}"
+            )
         self._session_id    = session_id
         self._session_start = time.time()
         self.session_started.emit(session_id)
