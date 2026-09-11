@@ -658,6 +658,16 @@ class DetectionPanelRGB(QWidget):
             f"gui_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}"
             f"_{cfg.session.detection_mode.value}"
         )
+        session_name = (self._session_meta or {}).get("session_name", "").strip()
+        if session_name:
+            # Sanitize for safe use in a folder/file name -- spaces and
+            # anything not alphanumeric/dash/underscore become
+            # underscores, so a name like "Row 3 (morning)" doesn't
+            # produce a broken or surprising path.
+            import re as _re
+            safe_name = _re.sub(r"[^A-Za-z0-9_-]+", "_", session_name).strip("_")
+            if safe_name:
+                session_id = f"{session_id}_{safe_name}"
         self._session_id    = session_id
         self._session_start = time.time()
         self.session_started.emit(session_id)
@@ -667,13 +677,21 @@ class DetectionPanelRGB(QWidget):
         # so a record exists even if the session crashes before any
         # spray event happens; the EventLogger itself persists each
         # individual spray event as it occurs.
+        #
+        # Everything for this session -- metadata, events, summary,
+        # and (on stop) the published report -- lives in ONE folder,
+        # logs/sessions/<session_id>/, rather than scattered across
+        # several flat/sibling locations (the previous layout, which
+        # made a single session's complete record hard to find or
+        # archive as one unit).
         self._logger = None
         try:
-            log_dir = cfg.logging.base_dir
-            log_dir.mkdir(parents=True, exist_ok=True)
+            session_dir = cfg.logging.base_dir / "sessions" / session_id
+            session_dir.mkdir(parents=True, exist_ok=True)
             import json
             session_meta = {
                 "session_id":     session_id,
+                "session_name":   session_name,
                 "mode":           cfg.session.detection_mode.value,
                 "growth_stage":   cfg.session.growth_stage.value,
                 "field_id":       cfg.session.field_id,
@@ -683,7 +701,7 @@ class DetectionPanelRGB(QWidget):
                 "B2_SPLIT_X":     cfg.zones.B2_SPLIT_X,
                 "threshold":      cfg.zones.detection_threshold,
             }
-            meta_path = log_dir / f"{session_id}_session.json"
+            meta_path = session_dir / f"{session_id}_session.json"
             with open(meta_path, "w") as f:
                 json.dump(session_meta, f, indent=2)
             self.shared_log.log(
@@ -837,10 +855,16 @@ class DetectionPanelRGB(QWidget):
             ended_at     = time.time(),
         )
 
-        out_dir = Path("logs/sessions")
+        # Same per-session folder EventLogger and the session metadata
+        # write above both use -- logs/sessions/<session_id>/ -- so a
+        # session's complete record (metadata, events, summary, and
+        # this report) is one folder, not scattered across several
+        # sibling/flat locations.
+        out_dir = Path("logs/sessions") / self._session_id
         try:
             if self._cfg is not None:
-                out_dir = Path(self._cfg.logging.base_dir) / "sessions"
+                out_dir = (Path(self._cfg.logging.base_dir) / "sessions"
+                          / self._session_id)
         except Exception:
             pass
         out_path = out_dir / f"{self._session_id}_report.json"

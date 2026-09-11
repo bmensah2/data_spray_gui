@@ -199,13 +199,22 @@ class EventLogger:
         # at all raised AttributeError immediately. See git history for
         # the full story: this class was never actually wired into the
         # live GUI, which is why nobody hit this until now.)
-        events_dir = cfg.logging.base_dir / "events" / session_id
+        #
+        # Everything for ONE session lives in ONE folder --
+        # logs/sessions/<session_id>/ -- rather than scattered across
+        # logs/events/<id>/, a flat logs/<id>_event_summary.json, and
+        # a separately-flat logs/<id>_session.json (the previous
+        # layout, which made it hard to find or archive a single
+        # session's complete record). detection_panel_rgb.py's session
+        # metadata write and its published-report write both target
+        # this same folder now.
+        events_dir = cfg.logging.base_dir / "sessions" / session_id
         events_dir.mkdir(parents=True, exist_ok=True)
 
         self._jsonl_path = events_dir / f"{session_id}_events.jsonl"
         self._csv_path   = events_dir / f"{session_id}_events.csv"
         self._summary_path = (
-            cfg.logging.base_dir / f"{session_id}_event_summary.json"
+            events_dir / f"{session_id}_event_summary.json"
         )
 
         # CSV writer setup
@@ -544,7 +553,7 @@ class EventLogger:
         Returns path to the exported .geojson file.
         """
         if output_path is None:
-            events_dir = self.cfg.logging.base_dir / "events" / self.session_id
+            events_dir = self.cfg.logging.base_dir / "sessions" / self.session_id
             output_path = events_dir / f"{self.session_id}_map.geojson"
 
         with self._lock:
@@ -597,7 +606,20 @@ class EventLogger:
 # ─────────────────────────────────────────────────────────────
 
 if __name__ == '__main__':
-    import shutil
+    import shutil, sys
+    from pathlib import Path as _Path
+    # Running this file directly puts core/ on sys.path, not the
+    # project root -- so `from core.detection_config_rgb import ...`
+    # below would fail. Same fix used elsewhere in core/ this session
+    # (camera_presets.py, offline_inference.py, etc.) -- pre-existing
+    # gap here, never fixed before since this self-test apparently was
+    # never run successfully (matches the class itself never having
+    # been wired into the live GUI until recently, per the comment in
+    # __init__ above).
+    _ROOT = _Path(__file__).resolve().parent.parent
+    if str(_ROOT) not in sys.path:
+        sys.path.insert(0, str(_ROOT))
+
     logging.basicConfig(
         level=logging.INFO,
         format='%(asctime)s [%(levelname)s] %(message)s'

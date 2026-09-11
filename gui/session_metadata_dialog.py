@@ -123,6 +123,20 @@ class SessionMetadataDialog(QDialog):
         grid.setSpacing(6)
         r = 0
 
+        self.ed_session_name = QLineEdit("")
+        self.ed_session_name.setPlaceholderText(
+            "optional \u2014 e.g. row3_morning (left blank: session is "
+            "identified by timestamp only)")
+        self.ed_session_name.setToolTip(
+            "A short, human-readable label folded into this session's "
+            "folder/file names, so logs are easier to find later than "
+            "a bare timestamp alone. Left blank each time deliberately "
+            "(not remembered like the other fields) -- reusing the "
+            "same name across sessions would make them harder to tell "
+            "apart, not easier.")
+        grid.addWidget(QLabel("Session Name"), r, 0)
+        grid.addWidget(self.ed_session_name, r, 1); r += 1
+
         self.ed_operator = QLineEdit(self._meta["operator"])
         self.ed_operator.setPlaceholderText("who is running the robot today")
         grid.addWidget(QLabel("Operator *"), r, 0)
@@ -213,11 +227,21 @@ class SessionMetadataDialog(QDialog):
                     "Operator name is blank — press again to continue anyway.")
                 self.ed_operator.setFocus()
                 return
-        save_last_metadata(self.metadata())
+        # session_name deliberately excluded from what gets persisted
+        # for next time's pre-fill -- reusing the same name across
+        # sessions would make folders harder to tell apart, not
+        # easier (load_last_metadata()'s own defaults dict already
+        # doesn't include this key, so it would never be read back
+        # even if saved, but leaving it out of the file entirely is
+        # cleaner than relying on that).
+        to_persist = self.metadata()
+        to_persist.pop("session_name", None)
+        save_last_metadata(to_persist)
         self.accept()
 
     def metadata(self) -> dict:
         return {
+            "session_name": self.ed_session_name.text().strip(),
             "operator":     self.ed_operator.text().strip(),
             "researcher":   self.ed_researcher.text().strip(),
             "institution":  self.ed_institution.text().strip(),
