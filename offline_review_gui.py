@@ -23,6 +23,20 @@ dashboard (same on-disk config), so switching themes in either app is
 picked up by the other on next launch.
 """
 
+import os
+# Must be set BEFORE PyQt5/QApplication ever initializes -- Qt's GTK
+# platform theme integration tries to reach a GVFS daemon at startup
+# for filesystem-related theme queries, independent of whether any
+# file dialog is ever actually opened (confirmed: the warning fires
+# within the first second of launch, before any Browse button could
+# have been clicked). GVFS isn't running/reachable in this
+# environment, so GIO falls back to the session bus and prints a
+# warning on every attempt. GIO_USE_VFS=local tells GIO to use the
+# plain local-filesystem backend instead, skipping the GVFS daemon
+# connection attempt entirely -- narrower than disabling Qt's GTK
+# platform theme altogether, which could affect unrelated styling.
+os.environ.setdefault("GIO_USE_VFS", "local")
+
 import sys
 
 from PyQt5.QtWidgets import (

@@ -19,6 +19,17 @@ Launch:
     python main_gui_rgb.py
 """
 
+import os
+# Must be set BEFORE PyQt5/QApplication ever initializes -- Qt's GTK
+# platform theme integration tries to reach a GVFS daemon at startup
+# for filesystem-related theme queries, independent of whether any
+# file dialog is ever actually opened. GVFS isn't running/reachable
+# in this environment, so GIO falls back to the session bus and
+# prints a GVFS-WARNING on every attempt. GIO_USE_VFS=local tells GIO
+# to use the plain local-filesystem backend instead, skipping the
+# GVFS daemon connection attempt entirely.
+os.environ.setdefault("GIO_USE_VFS", "local")
+
 import sys
 import warnings
 warnings.filterwarnings("ignore", category=ResourceWarning)
