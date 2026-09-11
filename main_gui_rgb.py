@@ -563,8 +563,18 @@ class MainWindow(QMainWindow):
 
             # ── System checklist ───────────────────────────────
             camera_on = self.camera.is_acquiring
-            actuation = self.tab2.detect._actuation
-            pump_on   = bool(actuation._pump_on) if actuation is not None else False
+            # Read the AUTHORITATIVE pump state -- parsed from real
+            # Arduino serial telemetry ("[PMP] Pump ON/OFF" lines, see
+            # GantryController._parse_line()) -- not
+            # ActuationController._pump_on, which is only a local flag
+            # the Python code sets optimistically the moment it SENDS
+            # a "pump off" command, without confirming the Arduino
+            # actually executed it. The same self.gantry.ctrl.state.
+            # pump_on is already used for the close-confirmation dialog
+            # below in this same file; this checklist should never
+            # have used a different, less trustworthy source for the
+            # exact same piece of state.
+            pump_on = self.gantry.ctrl.state.pump_on
 
             def _set_check(lbl, ok, label_text):
                 lbl.setText(f"{'✓' if ok else '⚠'}  {label_text}")
