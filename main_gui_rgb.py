@@ -58,7 +58,10 @@ sys.modules["gui.panels.detection_panel"] = _det_shim
 from gui.tabs.tab_collection import CollectionTab
 from gui.tabs.tab_detection import DetectionTab
 from gui.tabs.tab_analysis_rgb import AnalysisTabRGB as AnalysisTab
-from gui.tabs.tab_offline_review import OfflineReviewTab
+# NOTE: Offline Review moved to its own standalone app
+# (offline_review_gui.py) -- it's a post-processing/analysis tool
+# that never needed the camera/gantry/Arduino hardware this dashboard
+# connects to, so it no longer lives here as a tab.
 try:
     import realsense_camera as _rs_mod
     REALSENSE_AVAILABLE = True
@@ -145,7 +148,6 @@ class MainWindow(QMainWindow):
             self.camera, self.nav_detection, self.gantry,
             acq=self.acq)
         self.tab3 = AnalysisTab(self.gantry, self.tab2.detect)
-        self.tab4 = OfflineReviewTab(self._sys_log, detect_ref=self.tab2.detect)
 
         # ── Cross-tab movement lock ─────────────────────────────
         self.nav_detection.set_movement_controls_enabled(False)
@@ -159,7 +161,7 @@ class MainWindow(QMainWindow):
         self.main_tabs.addTab(
             self.tab3, "📊  Session Analysis")
         self.main_tabs.addTab(
-            self.tab4, "🎞  Offline Review")
+            self._future_tab("Tab 4"), "🔬  Future")
         self.main_tabs.addTab(
             self._future_tab("Tab 5"), "🔬 Future")
 
@@ -776,7 +778,6 @@ class MainWindow(QMainWindow):
         self.tab1.cleanup()
         self.tab2.cleanup()
         self.tab3.cleanup()
-        self.tab4.cleanup()
         self.nav_collection.cleanup()
         self.nav_detection.cleanup()
         self.acq.cleanup()
