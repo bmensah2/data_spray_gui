@@ -314,21 +314,33 @@ class DualCameraPanel:
 
     def _largest_display_size(self, default=(1280, 720)):
         """
-        Largest width/height among all currently-valid registered
-        display labels (normal tab views AND the fullscreen dialog,
-        if open, all live in the same self._display_lbls list -- see
-        display_widget()). Deliberately the LARGEST, not the first
-        one found: the previous "first valid" logic always picked
-        whichever label was registered first (a normal tab view,
-        created at startup), so opening fullscreen -- a much bigger
-        label added later -- never changed what resolution frames
-        were actually built at. The same too-small image was then
-        upscaled with nearest-neighbor Qt.FastTransformation in
-        _show() to fill the larger fullscreen window, producing a
-        soft/blocky look despite the source camera frame itself being
-        sharp. Building at the largest label's size instead means
-        smaller labels just get that larger image scaled DOWN
-        (looks fine) rather than a small image scaled UP (looks bad).
+        Largest width/height among all currently-valid, VISIBLE
+        registered display labels (normal tab views AND the
+        fullscreen dialog, if open, all live in the same
+        self._display_lbls list -- see display_widget()). Deliberately
+        the LARGEST, not the first one found: the previous "first
+        valid" logic always picked whichever label was registered
+        first (a normal tab view, created at startup), so opening
+        fullscreen -- a much bigger label added later -- never
+        changed what resolution frames were actually built at. The
+        same too-small image was then upscaled with nearest-neighbor
+        Qt.FastTransformation in _show() to fill the larger fullscreen
+        window, producing a soft/blocky look despite the source
+        camera frame itself being sharp. Building at the largest
+        label's size instead means smaller labels just get that
+        larger image scaled DOWN (looks fine) rather than a small
+        image scaled UP (looks bad).
+
+        isVisible() filtering added after the above fix alone still
+        left live playback visibly less smooth: Data Collection tab
+        and Detection tab each register their OWN label (see
+        display_widget() call sites), and fullscreen adds a third --
+        up to 3 labels can be in this list at once even though the
+        operator can only ever SEE one of them at a time (whichever
+        tab is active, or fullscreen if open). Without this filter, a
+        hidden inactive tab's label could still be the one
+        "largest", or at minimum was still being pointlessly
+        re-scaled every ~33ms in _show() below for no visible benefit.
 
         Capped at _MAX_DISPLAY_BUILD_WIDTH -- building at the exact
         fullscreen width noticeably cost more CPU per frame than the
@@ -339,6 +351,8 @@ class DualCameraPanel:
         best_w, best_h = 0, 0
         for lbl in self._display_lbls:
             try:
+                if not lbl.isVisible():
+                    continue
                 sz = lbl.size()
                 if sz.width() > 10 and sz.height() > 10 and sz.width() > best_w:
                     best_w, best_h = sz.width(), sz.height()
@@ -447,7 +461,18 @@ class DualCameraPanel:
         return img
 
     def _show(self, img: np.ndarray):
-        """Render BGR numpy array to ALL registered display QLabels."""
+        """
+        Render BGR numpy array to every registered display QLabel
+        that is currently VISIBLE. Skipping hidden ones (an inactive
+        tab's label, for instance) isn't just a no-op saved -- each
+        one previously still paid for its own pixmap.scaled() call
+        every ~33ms with no visible benefit at all, since up to 3
+        labels (Data Collection tab, Detection tab, and fullscreen if
+        open) can be registered simultaneously while the operator can
+        only ever see one at a time. A hidden label just shows
+        whatever it last had (at most one frame, ~33ms, stale) until
+        it becomes visible again, which is imperceptible.
+        """
         if not self._display_lbls:
             return
         try:
@@ -459,6 +484,8 @@ class DualCameraPanel:
             pixmap = QPixmap.fromImage(q)
             for lbl in self._display_lbls:
                 try:
+                    if not lbl.isVisible():
+                        continue
                     # _build_display already produces a correctly-sized
                     # image matched to the label dimensions.
                     # We still scale here as a safety net for resize events,
