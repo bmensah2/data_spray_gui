@@ -299,6 +299,36 @@ class DualCameraPanel:
         # Render to QLabel
         self._show(disp_img)
 
+    def _largest_display_size(self, default=(1280, 720)):
+        """
+        Largest width/height among all currently-valid registered
+        display labels (normal tab views AND the fullscreen dialog,
+        if open, all live in the same self._display_lbls list -- see
+        display_widget()). Deliberately the LARGEST, not the first
+        one found: the previous "first valid" logic always picked
+        whichever label was registered first (a normal tab view,
+        created at startup), so opening fullscreen -- a much bigger
+        label added later -- never changed what resolution frames
+        were actually built at. The same too-small image was then
+        upscaled with nearest-neighbor Qt.FastTransformation in
+        _show() to fill the larger fullscreen window, producing a
+        soft/blocky look despite the source camera frame itself being
+        sharp. Building at the largest label's size instead means
+        smaller labels just get that larger image scaled DOWN
+        (looks fine) rather than a small image scaled UP (looks bad).
+        """
+        best_w, best_h = 0, 0
+        for lbl in self._display_lbls:
+            try:
+                sz = lbl.size()
+                if sz.width() > 10 and sz.height() > 10 and sz.width() > best_w:
+                    best_w, best_h = sz.width(), sz.height()
+            except RuntimeError:
+                pass   # widget destroyed
+        if best_w < 10:
+            return default
+        return best_w, best_h
+
     def _build_display(self, pair: FramePair) -> np.ndarray:
         """
         Build the display image based on selected display mode.
@@ -311,19 +341,9 @@ class DualCameraPanel:
         left  = pair.left
         right = pair.right
 
-        # Determine label display size for all single-camera modes
-        _lbl_w = _lbl_h = 0
-        for _lbl in self._display_lbls:
-            try:
-                _sz = _lbl.size()
-                if _sz.width() > 10 and _sz.height() > 10:
-                    _lbl_w = _sz.width()
-                    _lbl_h = _sz.height()
-                    break
-            except RuntimeError:
-                pass
-        if _lbl_w < 10:
-            _lbl_w, _lbl_h = 1280, 720
+        # Determine label display size for all single-camera modes --
+        # the LARGEST currently-valid label (see _largest_display_size()).
+        _lbl_w, _lbl_h = self._largest_display_size()
         _disp_h = max(1, int(_lbl_w / (1920 / 1080)))  # 16:9
 
         if mode == "Left Only":
@@ -350,21 +370,9 @@ class DualCameraPanel:
             cam_w, cam_h = 1920, 1080
             cam_aspect   = cam_w / cam_h   # 16:9 = 1.777…
 
-            # Determine target display size from the first valid label
-            lbl_w = lbl_h = 0
-            for lbl in self._display_lbls:
-                try:
-                    sz = lbl.size()
-                    if sz.width() > 10 and sz.height() > 10:
-                        lbl_w = sz.width()
-                        lbl_h = sz.height()
-                        break
-                except RuntimeError:
-                    pass
-
-            if lbl_w < 10:
-                # Label not yet rendered — fall back to a sensible default
-                lbl_w, lbl_h = 1280, 360
+            # Determine target display size -- the LARGEST currently-
+            # valid label (see _largest_display_size()).
+            lbl_w, lbl_h = self._largest_display_size(default=(1280, 360))
 
             # Each camera half gets half the label width
             half_w   = (lbl_w - 4) // 2   # subtract 4px for centre divider
