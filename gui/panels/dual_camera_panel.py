@@ -299,6 +299,19 @@ class DualCameraPanel:
         # Render to QLabel
         self._show(disp_img)
 
+    # Each camera is natively 1920x1080; the Side-by-Side view splits
+    # the label width in half per camera, so even fullscreen's full
+    # width (~1900px on a typical monitor) gives each camera only
+    # ~950px -- still a DOWNSCALE from native resolution, never an
+    # upscale, at any reasonable label size. Capping below the exact
+    # window width therefore costs no real sharpness (we're already
+    # downscaling either way) while meaningfully cutting the resize/
+    # conversion work done every ~33ms. 1440px keeps each camera half
+    # around 718px -- more than double the ~318px the pre-fix bug
+    # produced, at roughly half the pixel-area cost of building at
+    # the full ~1900px fullscreen width.
+    _MAX_DISPLAY_BUILD_WIDTH = 1440
+
     def _largest_display_size(self, default=(1280, 720)):
         """
         Largest width/height among all currently-valid registered
@@ -316,6 +329,12 @@ class DualCameraPanel:
         sharp. Building at the largest label's size instead means
         smaller labels just get that larger image scaled DOWN
         (looks fine) rather than a small image scaled UP (looks bad).
+
+        Capped at _MAX_DISPLAY_BUILD_WIDTH -- building at the exact
+        fullscreen width noticeably cost more CPU per frame than the
+        old (buggy) small build, visibly affecting live smoothness,
+        for resolution beyond what the source camera can actually
+        supply anyway (see the class-level comment above).
         """
         best_w, best_h = 0, 0
         for lbl in self._display_lbls:
@@ -327,6 +346,10 @@ class DualCameraPanel:
                 pass   # widget destroyed
         if best_w < 10:
             return default
+        if best_w > self._MAX_DISPLAY_BUILD_WIDTH:
+            # Preserve aspect ratio while capping width
+            best_h = max(1, int(best_h * self._MAX_DISPLAY_BUILD_WIDTH / best_w))
+            best_w = self._MAX_DISPLAY_BUILD_WIDTH
         return best_w, best_h
 
     def _build_display(self, pair: FramePair) -> np.ndarray:
