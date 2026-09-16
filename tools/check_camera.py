@@ -37,9 +37,9 @@ from pathlib import Path
 
 import cv2
 
-# The two ALREADY-KNOWN camera paths, for reference only -- run
-# --list and whichever by-id entry ISN'T one of these two is the new
-# Cam 2. Imported as plain strings, not from core/dual_emeet_camera.py,
+# The two ALREADY-KNOWN eMeet camera paths, for reference only -- run
+# --list and whichever eMeet by-id entry ISN'T one of these two is the
+# new Cam 2. Imported as plain strings, not from core/dual_emeet_camera.py,
 # so this script has zero dependency on the rest of the project and
 # still works even if that module can't import for some reason.
 KNOWN_CAMERAS = {
@@ -80,20 +80,30 @@ def list_devices():
         label = KNOWN_CAMERAS.get(p.name)
         if label:
             print(f"  [{label}] {p}")
+        elif "EMEET" in p.name.upper():
+            print(f"  [NEW eMeet -- likely Cam 2] {p}")
         else:
-            print(f"  [NEW / UNRECOGNIZED -- likely Cam 2] {p}")
+            # A real, expected device (e.g. the RealSense D455 depth
+            # camera) that just isn't one of the three eMeet weed-
+            # detection cameras -- shown for visibility, but NOT
+            # counted as an "unrecognized" candidate for Cam 2 below.
+            # The first run of this script lumped a plugged-in
+            # RealSense in with a genuinely new eMeet camera as two
+            # equally-confusing "unrecognized" entries.
+            print(f"  [other device, not an eMeet camera] {p}")
 
     print()
-    unknown = [p for p in entries if p.name not in KNOWN_CAMERAS]
-    if len(unknown) == 1:
+    new_emeet = [p for p in entries
+                if p.name not in KNOWN_CAMERAS and "EMEET" in p.name.upper()]
+    if len(new_emeet) == 1:
         print(f"→ Test the new one with:")
-        print(f"    python3 tools/check_camera.py {unknown[0]}")
-    elif len(unknown) > 1:
-        print(f"→ Found {len(unknown)} unrecognized cameras, expected "
-              f"exactly 1 (the new Cam 2) -- check for duplicate/stale "
-              f"entries below before picking one.")
+        print(f"    python3 tools/check_camera.py {new_emeet[0]}")
+    elif len(new_emeet) > 1:
+        print(f"→ Found {len(new_emeet)} unrecognized eMeet cameras, "
+              f"expected exactly 1 (the new Cam 2) -- check for "
+              f"duplicate/stale entries above before picking one.")
     else:
-        print("→ No new/unrecognized camera found -- confirm Cam 2 is "
+        print("→ No new eMeet camera found -- confirm Cam 2 is "
               "plugged in and powered.")
 
 
@@ -106,14 +116,30 @@ def check_camera(device: str, width: int = 1920, height: int = 1080):
               "use by another program (e.g. the main GUI)?")
         return False
 
+    # MJPG MUST be set before width/height, and matches exactly what
+    # core/dual_emeet_camera.py does for the two working cameras. Most
+    # USB webcams (including this one, apparently) fall back to an
+    # uncompressed format without it, which caps the achievable
+    # resolution far lower over typical USB bandwidth -- e.g. 640x480
+    # instead of the eMeet C960 4K's real 1920x1080 -- and looks
+    # exactly like a hardware problem with the camera even though it
+    # isn't one.
+    cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
     actual_w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     actual_h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
     fps = cap.get(cv2.CAP_PROP_FPS)
     print(f"✓ Opened successfully")
-    print(f"  Requested: {width}x{height}")
+    print(f"  Requested: {width}x{height} (MJPG)")
     print(f"  Actual:    {actual_w}x{actual_h} @ {fps:.1f} fps")
+    if actual_w < width or actual_h < height:
+        print(f"  ⚠ Got a lower resolution than requested even with MJPG "
+              f"set -- could be genuine camera/driver limits, or (if "
+              f"other cameras are also active right now) a USB "
+              f"bandwidth/hub limit across multiple simultaneous "
+              f"streams. Try this camera alone, on its own USB port/hub "
+              f"if possible, before concluding it's a hardware fault.")
 
     # Confirm it's genuinely streaming, not just "opened" -- a camera
     # can report isOpened()==True while producing zero real frames if
