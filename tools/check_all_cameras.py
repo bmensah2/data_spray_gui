@@ -21,16 +21,22 @@ Controls while the preview window is open:
              directory
     q / Esc  quit
 
-Note: running all three cameras at once, each requesting 1920x1080
-MJPG @ 30fps, is meaningfully more USB bandwidth than running just one
-(as tools/check_camera.py does). If they're all on the same USB hub/
-controller, this can occasionally hit a bandwidth ceiling even with
-MJPG compression -- if a camera fails to open here but worked fine
-individually with check_camera.py, that's the most likely explanation,
-not a camera fault.
+Each camera is read in its OWN background thread (same pattern as
+core/dual_emeet_camera.py's proven-working 2-camera capture, just
+extended to 3) rather than reading all three sequentially in one loop.
+A sequential read blocks on cap.read() for camera 1 before even
+attempting camera 2 or 3 -- if any single camera stalls for a moment
+(startup, USB contention, a slow frame), the whole loop stalls with
+it, which is what produced repeated "Lost a frame... retrying" with
+no progress on the very first version of this script. Independent
+threads mean one camera's momentary stall never blocks the others or
+the display loop; the display just shows each camera's most recently
+completed frame.
 """
 
 import sys
+import threading
+import time
 
 import cv2
 import numpy as np
@@ -45,18 +51,75 @@ CAMERAS = [
     ("Cam 3 / N3", "/dev/v4l/by-id/usb-EMEET_EMEET_SmartCam_C960_4K_A241217000804000-video-index0"),
 ]
 
+# How long the main loop waits for EVERY camera to have delivered at
+# least one frame before giving up and reporting which one(s) never
+# did -- a real, specific diagnostic instead of hanging silently.
+STARTUP_TIMEOUT_S = 8.0
 
-def open_camera(device: str, width: int = 1920, height: int = 1080):
-    """Open one camera with the same MJPG-first setup that fixed Cam 2's
-    resolution in tools/check_camera.py. Returns None on failure rather
-    than raising, so the caller can report which specific camera failed."""
-    cap = cv2.VideoCapture(device)
-    if not cap.isOpened():
-        return None
-    cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))
-    cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)
-    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
-    return cap
+
+class CameraStream:
+    """
+    One camera, read continuously in its own background thread. The
+    main/display loop only ever reads self.frame (the latest
+    successfully-read frame, or None until the first one arrives) --
+    it never calls cap.read() itself and so can never be blocked by
+    this camera specifically.
+    """
+
+    def __init__(self, label: str, device: str):
+        self.label   = label
+        self.device  = device
+        self.frame   = None
+        self.ts      = 0.0
+        self.opened  = False
+        self.actual_w = 0
+        self.actual_h = 0
+        self._lock    = threading.Lock()
+        self._running = False
+        self._cap     = None
+        self._thread  = None
+
+    def start(self, width: int = 1920, height: int = 1080) -> bool:
+        cap = cv2.VideoCapture(self.device)
+        if not cap.isOpened():
+            return False
+        # MJPG MUST be set before width/height -- same fix that
+        # resolved Cam 2 reporting 640x480 in tools/check_camera.py.
+        cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))
+        cap.set(cv2.CAP_PROP_FRAME_WIDTH,  width)
+        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
+        self.actual_w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        self.actual_h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        self._cap     = cap
+        self.opened   = True
+        self._running = True
+        self._thread  = threading.Thread(
+            target=self._capture_loop, daemon=True,
+            name=f"cam-{self.label}")
+        self._thread.start()
+        return True
+
+    def _capture_loop(self):
+        while self._running:
+            ok, frame = self._cap.read()
+            if ok and frame is not None:
+                with self._lock:
+                    self.frame = frame
+                    self.ts    = time.time()
+            # No sleep/backoff on failure -- this is a short-lived
+            # interactive diagnostic tool, not a long-running service;
+            # a brief burst of fast retries during startup is fine.
+
+    def latest(self):
+        with self._lock:
+            return self.frame, self.ts
+
+    def stop(self):
+        self._running = False
+        if self._thread is not None:
+            self._thread.join(timeout=2.0)
+        if self._cap is not None:
+            self._cap.release()
 
 
 def build_combined_display(frames, labels, disp_width: int = 640):
@@ -90,49 +153,56 @@ def build_combined_display(frames, labels, disp_width: int = 640):
 
 
 def main():
-    print("Opening all 3 cameras simultaneously ...")
-    caps = []
+    print("Opening all 3 cameras (each in its own capture thread) ...")
+    streams = []
     for label, device in CAMERAS:
-        cap = open_camera(device)
-        if cap is None:
+        s = CameraStream(label, device)
+        if not s.start():
             print(f"✗ Could not open {label} at {device}")
             print("  Check: plugged in, powered, not already in use by "
-                  "another program (e.g. the main GUI), and see the USB "
-                  "bandwidth note in this script's docstring if the other "
-                  "two opened fine.")
-            for c, _ in caps:
-                c.release()
+                  "another program (e.g. the main GUI).")
+            for done in streams:
+                done.stop()
             sys.exit(1)
-        actual_w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-        actual_h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-        print(f"✓ {label}: {actual_w}x{actual_h}")
-        caps.append((cap, label))
+        print(f"✓ {label}: opened, requested {s.actual_w}x{s.actual_h}")
+        streams.append(s)
 
-    print(f"\nAll 3 cameras open. Live combined preview starting.")
-    print(f"Lay a shared reference object (e.g. a tape measure) across "
-          f"the ground so it's visible spanning the overlap regions "
-          f"between adjacent cameras.")
-    print(f"Press 's' to save each camera's full-resolution frame plus "
-          f"one combined reference image, 'q' or Esc to quit.\n")
+    print(f"\nWaiting for a first frame from all 3 cameras "
+          f"(up to {STARTUP_TIMEOUT_S:.0f}s) ...")
+    deadline = time.time() + STARTUP_TIMEOUT_S
+    while time.time() < deadline:
+        if all(s.latest()[0] is not None for s in streams):
+            break
+        time.sleep(0.1)
+    missing = [s.label for s in streams if s.latest()[0] is None]
+    if missing:
+        print(f"✗ Timed out waiting for a first frame from: "
+              f"{', '.join(missing)}")
+        print(f"  The other camera(s) delivered frames fine, so this "
+              f"is most likely a USB bandwidth/hub contention issue "
+              f"with 3 simultaneous 1080p MJPG streams -- try moving "
+              f"one camera to a different USB port/hub if available, "
+              f"or test that specific camera alone first with "
+              f"tools/check_camera.py to rule out a camera-specific "
+              f"problem.")
+        for s in streams:
+            s.stop()
+        sys.exit(1)
+    print("✓ All 3 cameras delivering frames.\n")
+
+    print("Live combined preview starting.")
+    print("Lay a shared reference object (e.g. a tape measure) across "
+          "the ground so it's visible spanning the overlap regions "
+          "between adjacent cameras.")
+    print("Press 's' to save each camera's full-resolution frame plus "
+          "one combined reference image, 'q' or Esc to quit.\n")
 
     snap_count = 0
     win_name = "All 3 Cameras — Overlap Check"
     try:
         while True:
-            frames = []
-            ok_all = True
-            for cap, label in caps:
-                ok, frame = cap.read()
-                if not ok or frame is None:
-                    ok_all = False
-                    break
-                frames.append(frame)
-
-            if not ok_all:
-                print("⚠ Lost a frame from one camera this cycle, retrying…")
-                continue
-
-            labels = [label for _, label in caps]
+            frames = [s.latest()[0] for s in streams]
+            labels = [s.label for s in streams]
             combined = build_combined_display(frames, labels)
             cv2.imshow(win_name, combined)
 
@@ -141,8 +211,8 @@ def main():
                 break
             elif key == ord('s'):
                 snap_count += 1
-                for (cap, label), frame in zip(caps, frames):
-                    safe_label = label.replace(" / ", "_").replace(" ", "_")
+                for s, frame in zip(streams, frames):
+                    safe_label = s.label.replace(" / ", "_").replace(" ", "_")
                     fname = f"overlap_check_{snap_count}_{safe_label}.jpg"
                     cv2.imwrite(fname, frame)
                     print(f"  Saved {fname} "
@@ -152,8 +222,8 @@ def main():
                 print(f"  Saved {combo_fname} (downscaled, for quick "
                      f"reference only)")
     finally:
-        for cap, _ in caps:
-            cap.release()
+        for s in streams:
+            s.stop()
         cv2.destroyAllWindows()
 
     print(f"\n✓ Done. {snap_count} snapshot set(s) saved "
