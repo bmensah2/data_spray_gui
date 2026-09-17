@@ -147,7 +147,8 @@ class CameraSettingsWidget(QWidget):
         lay.setSpacing(6)
 
         dev_names = " + ".join(d.split("/")[-1][:28] for d in self.devices)
-        lay.addWidget(_sec(f"Camera Settings  —  applies to both cameras"))
+        n = len(self.devices)
+        lay.addWidget(_sec(f"Camera Settings  —  applies to all {n} camera{'s' if n != 1 else ''}"))
         subtitle = _muted(dev_names)
         lay.addWidget(subtitle)
         lay.addWidget(_divider())
@@ -578,7 +579,8 @@ class CameraSettingsWidget(QWidget):
                  self.cmb_freq.currentIndex())
 
         if not errors_by_device:
-            msg = "Settings applied to both cameras"
+            n = len(self.devices)
+            msg = f"Settings applied to all {n} camera{'s' if n != 1 else ''}"
             level = "ok"
         else:
             parts = [f"{dev.split('/')[-1][:16]}: {len(ctrls)} failed"
