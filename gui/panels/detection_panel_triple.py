@@ -48,7 +48,7 @@ from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGroupBox, QLabel, QPushButton,
     QCheckBox,
 )
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import Qt, QTimer
 
 from gui.style import _muted, _sec
 from gui.theme_manager import theme_manager
@@ -148,6 +148,25 @@ class DetectionPanelTriple(QWidget):
         # spray_active unchanged whenever speed < 0.05 m/s -- which is
         # exactly the situation with no Husky odometry connected.
         self._static_test = False
+
+        # Camera watchdog -- see _check_camera_watchdog()'s docstring
+        # for the real-hardware bug this exists to close: a camera
+        # that stops producing frames (confirmed on real hardware --
+        # a USB disconnect, errno=19 "No such device") means
+        # read_triple() returns None, which means _run_inference()
+        # simply never runs again until frames resume -- silently
+        # leaving whatever nozzle was firing at that instant stuck in
+        # its last-known state indefinitely, with no new frame ever
+        # arriving to tell it to stop. Independent of and NOT the same
+        # mechanism as ActuationController's own "continuously open"
+        # guard, which is deliberately warn-only (a real, dense weed
+        # patch legitimately SHOULD keep spraying) -- loss of camera
+        # sensing is a different condition and gets a real stop, not
+        # just a log line.
+        self._last_frame_time  = 0.0
+        self._camera_watchdog  = QTimer()
+        self._camera_watchdog.timeout.connect(self._check_camera_watchdog)
+        self.CAMERA_WATCHDOG_TIMEOUT_S = 3.0
 
         self._build_ui()
 
@@ -272,6 +291,9 @@ class DetectionPanelTriple(QWidget):
 
         self.camera.on_detection_overlay = self._run_inference
 
+        self._last_frame_time = time.time()
+        self._camera_watchdog.start(500)   # check twice a second
+
         self.lbl_armed.setText(
             f"ARMED — {'stub mode' if self._engine.stub_mode else 'model loaded'}")
         self.btn_arm.setEnabled(False)
@@ -287,6 +309,7 @@ class DetectionPanelTriple(QWidget):
             return
         self.camera.on_detection_overlay = None
         self._armed = False
+        self._camera_watchdog.stop()
 
         if self._actuation:
             try:
@@ -320,7 +343,7 @@ class DetectionPanelTriple(QWidget):
             lb.setText(f"N{i+1}: --")
         self.shared_log.log("DETECT", "Detection stopped", "info")
 
-    def _det_estop(self):
+    def _det_estop(self, reason: str = "Operator pressed E-STOP"):
         """
         Emergency stop — cuts actuation immediately. Never silently
         swallow a failure here: an E-STOP button that failed without
@@ -328,12 +351,19 @@ class DetectionPanelTriple(QWidget):
         most to catch, so any exception is logged loudly rather than
         passed over quietly (same hard-learned lesson as the
         2-camera system's _det_estop()).
+
+        reason: logged verbatim so it's clear WHY this fired -- the
+        operator's own button press, or (see
+        _check_camera_watchdog()) an automatic safety stop triggered
+        by loss of camera data, which needs a very different
+        response (check the camera/USB connection, not the nozzles).
         """
         if self._actuation:
             try:
                 self._actuation.emergency_stop()
                 self.shared_log.log(
-                    "DETECT", "ActuationController E-STOP acknowledged",
+                    "DETECT",
+                    f"ActuationController E-STOP acknowledged ({reason})",
                     "error")
             except Exception as e:
                 self.shared_log.log(
@@ -346,9 +376,10 @@ class DetectionPanelTriple(QWidget):
         else:
             self.shared_log.log(
                 "DETECT",
-                "⚠ E-STOP pressed but no ActuationController is active "
-                "(not armed) -- nothing to stop on this path", "warn")
-        self.shared_log.log("DETECT", "E-STOP", "error")
+                f"⚠ E-STOP ({reason}) but no ActuationController is "
+                f"active (not armed) -- nothing to stop on this path",
+                "warn")
+        self.shared_log.log("DETECT", f"E-STOP — {reason}", "error")
 
         # Reset the nozzle labels IMMEDIATELY, not on the next
         # _run_inference() pass. Detection stays armed after E-STOP
@@ -364,6 +395,43 @@ class DetectionPanelTriple(QWidget):
         for i, lb in enumerate(self.lbl_nozzles):
             lb.setText(f"N{i+1}: E-STOP")
 
+    def _check_camera_watchdog(self):
+        """
+        Runs independently every 500ms (self._camera_watchdog),
+        NOT triggered by frame arrival -- that's the whole point.
+        _run_inference() only runs when a fresh camera triple was
+        actually read; if a camera disconnects (confirmed on real
+        hardware: a USB drop, errno=19 "No such device"),
+        read_triple() correctly returns None and _run_inference()
+        simply stops being called at all. Without an independent
+        check like this one, whatever nozzle was firing at that exact
+        instant would stay in that last-known state indefinitely --
+        no new frame ever arrives to tell it otherwise, and
+        ActuationController's own "continuously open" guard is
+        deliberately warn-only (correct for a real, dense weed patch
+        that legitimately should keep spraying -- see its own test).
+        Loss of camera SENSING is a different condition from "a real
+        weed is still there", and gets a real stop, not just a log
+        line.
+
+        Reuses the already-tested E-STOP path rather than a separate
+        stop mechanism -- same UI feedback (labels immediately show
+        "E-STOP"), same requirement that the operator explicitly
+        clears it before resuming, deliberately: a camera glitch that
+        silently self-heals and silently auto-resumes spraying is a
+        worse outcome than requiring the operator to notice and
+        acknowledge it first.
+        """
+        if not self._armed:
+            return
+        if self._actuation and self._actuation._manual_estop_active:
+            return   # already stopped (this call or the operator's own)
+        stale_for = time.time() - self._last_frame_time
+        if stale_for > self.CAMERA_WATCHDOG_TIMEOUT_S:
+            self._det_estop(
+                reason=f"no fresh camera data for {stale_for:.1f}s "
+                       f"(camera watchdog — check USB connection)")
+
     def _on_spray_event(self, event):
         self._events += 1
         self.lbl_events.setText(f"Spray events: {self._events}")
@@ -378,6 +446,14 @@ class DetectionPanelTriple(QWidget):
         """
         if not self._armed:
             return display_img
+        # This method only ever runs when TripleCameraPanel already
+        # successfully read a fresh triple this cycle (see
+        # _refresh_display() -- on_detection_overlay is only called
+        # after a real triple.frames is obtained) -- so reaching this
+        # line at all IS the signal that camera data is genuinely
+        # current. See _check_camera_watchdog() for what happens when
+        # this stops being called.
+        self._last_frame_time = time.time()
         try:
             frames = self.camera.get_frame_snapshot()
             if any(f is None for f in frames):
