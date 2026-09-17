@@ -23,18 +23,12 @@ docstring for the physical rationale), so there's no more shared zone
 to draw across two camera panels -- each camera's own panel gets ONE
 owned-range highlight instead of being split into two named sub-zones.
 
-Nozzle centerline note: the old system drew a dashed vertical line at
-each nozzle's measured pixel center within its camera (n1_center_cam1
-etc., separately measured from the zone SPLIT boundary). That data
-doesn't exist yet for the new cameras -- only the owned-range
-boundaries themselves were measured (see TripleZoneConfig). Drawing a
-centerline at, say, the midpoint of the owned range would be
-guessing, not measuring, and could visually mislead the operator about
-exactly where a nozzle physically is. Left out here until real
-nozzle-center pixel positions are measured and added to
-TripleZoneConfig -- boundary lines and the owned-region highlight
-(the safety-relevant parts: "which portion of this camera fires this
-nozzle") are drawn instead.
+Nozzle centerline: drawn at each nozzle's MEASURED physical pixel
+position (TripleZoneConfig.nozzle_centers_x(), from a direct tape-
+measure reading of N1/N2/N3's physical position, not derived from the
+owned-range boundaries -- a nozzle's physical position has no reason
+to sit at the midpoint of its camera's owned zone). Same dash style
+as the old 2-camera system's centerline for visual consistency.
 """
 
 import cv2
@@ -160,6 +154,20 @@ def draw_triple_detection_overlay(img, triple_result, spray_states,
             lx = offset + px_min + max(4, (px_max - px_min - tw) // 2)
             put_text(out, label, (lx, h - 6 - th),
                     font_size=FONT_SIZE, color_bgr=color)
+
+            # Nozzle centerline — short fine dashes at the MEASURED
+            # physical nozzle position (TripleZoneConfig.nozzle_centers_x(),
+            # not derived from the owned-range boundaries -- a nozzle's
+            # physical position has no reason to sit at its zone's
+            # midpoint). Same dash style as the old dual-camera
+            # gui/overlay_rendering.py for visual consistency.
+            noz_cx = offset + int(zone_cfg.nozzle_centers_x()[cam_idx] * scale)
+            DASH, GAP = 6, 10
+            dash_color = (230, 230, 230) if active else color
+            for y_s in range(0, h, DASH + GAP):
+                cv2.line(out, (noz_cx, y_s),
+                        (noz_cx, min(y_s + DASH, h)),
+                        dash_color, 1)
 
             if active:
                 ovl = out.copy()
@@ -301,6 +309,28 @@ if __name__ == "__main__":
         assert False, "should have raised"
     except ValueError as e:
         print(f"✓ Correctly rejects a non-3-frame list: {e}")
+
+    # ── Test 7: the nozzle centerline is drawn at the exact measured
+    # pixel position (not just "some extra ink somewhere") ──
+    scale_check = panel_w2 / zone_cfg.FRAME_WIDTH
+    expected_cam2_noz_x = int(zone_cfg.nozzle_centers_x()[1] * scale_check)
+    cam2_offset = panel_w2 + 4
+    col_x = cam2_offset + expected_cam2_noz_x
+    # Sample down the expected centerline column -- at least one dash
+    # segment should be non-background along it (dashes have gaps, so
+    # check a run of rows rather than one exact pixel).
+    bg = np.array((40, 60, 30))
+    column_has_dash = any(
+        not np.array_equal(overlay[y, col_x], bg)
+        for y in range(0, overlay.shape[0], 2)
+    )
+    assert column_has_dash, (
+        f"expected a dashed centerline at column {col_x} "
+        f"(Cam2's measured nozzle position), found none")
+    print(f"✓ Nozzle centerline is drawn at the exact measured pixel "
+          f"position for Cam 2 (column {col_x}, from its measured "
+          f"39in physical nozzle center) -- not just present "
+          f"somewhere, but at the specific correct location")
 
     print()
     print("=" * 60)

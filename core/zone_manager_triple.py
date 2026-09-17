@@ -80,6 +80,9 @@ class TripleZoneConfig:
     ║  Boundary between Cam1/Cam2's owned zones: 28in            ║
     ║  Boundary between Cam2/Cam3's owned zones: 49in            ║
     ║                                                            ║
+    ║  Nozzle physical centers (tape measure, directly under     ║
+    ║  each nozzle): N1=16in, N2=39in, N3=61in                   ║
+    ║                                                            ║
     ║  Pixel boundaries (linear map across each camera's own     ║
     ║  1920px frame width, from its own view span above):        ║
     ║    Cam 1 acts on pixel_x <  CAM1_MAX_X                     ║
@@ -100,6 +103,20 @@ class TripleZoneConfig:
     CAM2_MAX_X: int = 1620
     # (49in - 43in) / 31in * 1920 ≈ 372
     CAM3_MIN_X: int = 372
+
+    # Nozzle center X, in each camera's OWN 1920px frame -- measured
+    # directly with a tape measure (physical nozzle center position),
+    # not derived from the owned-range boundaries above (a nozzle's
+    # physical position has no reason to sit at the midpoint of its
+    # camera's owned zone). Used only for the overlay's nozzle
+    # centerline -- purely a visual aid, no effect on which zone a
+    # detection is routed to.
+    # N1: (16in - 1in) / 31in * 1920  ≈ 929
+    CAM1_NOZZLE_X: int = 929
+    # N2: (39in - 22in) / 32in * 1920 = 1020
+    CAM2_NOZZLE_X: int = 1020
+    # N3: (61in - 43in) / 31in * 1920 ≈ 1115
+    CAM3_NOZZLE_X: int = 1115
 
     # camera_index -> nozzle_id (0-indexed); one-to-one, unlike the
     # old dual-camera zone_nozzle_map which had two zones sharing one
@@ -138,6 +155,12 @@ class TripleZoneConfig:
             (self.CAM2_MIN_X, self.CAM2_MAX_X),  # Cam 2
             (self.CAM3_MIN_X, None),             # Cam 3
         ]
+
+    def nozzle_centers_x(self) -> List[int]:
+        """Per-camera nozzle center X, in that camera's own 1920px
+        frame -- index = camera index. Purely a display/visual aid
+        (see CAM*_NOZZLE_X above); never used for zone routing."""
+        return [self.CAM1_NOZZLE_X, self.CAM2_NOZZLE_X, self.CAM3_NOZZLE_X]
 
     @property
     def camera_count(self) -> int:
@@ -567,6 +590,18 @@ if __name__ == "__main__":
         "the boundary pixel itself (1672) should be inclusive to Cam 1")
     print(f"✓ Detection exactly AT the boundary pixel (1672) is "
           f"correctly treated as owned by Cam 1 (inclusive boundary)")
+
+    # ── Test 8: nozzle_centers_x() matches the measured physical
+    # positions -- N1=16in, N2=39in, N3=61in, each converted within
+    # its own camera's view span, independent of the owned-range
+    # boundaries (a nozzle's physical position has no reason to sit
+    # at its zone's midpoint) ──
+    centers = cfg.nozzle_centers_x()
+    assert centers == [929, 1020, 1115], (
+        f"expected measured nozzle centers [929, 1020, 1115], got {centers}")
+    print(f"✓ nozzle_centers_x() correctly returns the measured "
+          f"physical nozzle positions converted to pixels: {centers} "
+          f"(N1=16in, N2=39in, N3=61in)")
 
     print()
     print("=" * 60)
