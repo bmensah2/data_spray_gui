@@ -310,6 +310,14 @@ class DetectionPanelTriple(QWidget):
         self.lbl_armed.setText("Not armed")
         self.btn_arm.setEnabled(True)
         self.btn_stop.setEnabled(False)
+        # Nozzle status labels are only ever updated from
+        # _run_inference(), which stops running the moment
+        # self._armed goes False above -- without resetting them
+        # here explicitly, a label showing "FIRING" at the exact
+        # instant Stop was pressed would freeze there forever,
+        # looking like the system is still spraying when it isn't.
+        for i, lb in enumerate(self.lbl_nozzles):
+            lb.setText(f"N{i+1}: --")
         self.shared_log.log("DETECT", "Detection stopped", "info")
 
     def _det_estop(self):
@@ -341,6 +349,20 @@ class DetectionPanelTriple(QWidget):
                 "⚠ E-STOP pressed but no ActuationController is active "
                 "(not armed) -- nothing to stop on this path", "warn")
         self.shared_log.log("DETECT", "E-STOP", "error")
+
+        # Reset the nozzle labels IMMEDIATELY, not on the next
+        # _run_inference() pass. Detection stays armed after E-STOP
+        # (by design -- the operator may want to keep monitoring
+        # while investigating), so _run_inference() keeps running and
+        # would otherwise keep computing/displaying "FIRING" from the
+        # raw zone/geometry decision alone, which has no idea E-STOP
+        # exists -- only actuate() itself knows to refuse. Without
+        # this, the display would contradict the log line right above
+        # it and mislead the operator into thinking the system is
+        # still spraying.
+        self._prev_spray = [False, False, False]
+        for i, lb in enumerate(self.lbl_nozzles):
+            lb.setText(f"N{i+1}: E-STOP")
 
     def _on_spray_event(self, event):
         self._events += 1
@@ -416,6 +438,19 @@ class DetectionPanelTriple(QWidget):
                 )
                 spray_states.append(state)
 
+            # If E-STOP is active, the actuator already refuses to
+            # fire internally (actuate() checks
+            # self._manual_estop_active itself) -- but without this,
+            # the DISPLAY would still show "FIRING" straight from the
+            # raw zone/geometry decision, which has no notion of
+            # E-STOP at all. Overriding here, before new_triggers/
+            # new_releases and before actuate(), keeps everything
+            # downstream (the actual fire call, the nozzle labels,
+            # and _prev_spray's own bookkeeping for the next frame)
+            # consistent with reality: nothing is firing.
+            if self._actuation and self._actuation._manual_estop_active:
+                spray_states = [False, False, False]
+
             prev = self._prev_spray
             new_triggers = [i for i, (c, p) in enumerate(zip(spray_states, prev)) if c and not p]
             new_releases = [i for i, (c, p) in enumerate(zip(spray_states, prev)) if not c and p]
@@ -438,8 +473,12 @@ class DetectionPanelTriple(QWidget):
 
             self.lbl_fps.setText(f"FPS: {self._fps:.1f}")
             self.lbl_inf.setText(f"Inference: {result.total_ms:.1f}ms")
+            estopped = bool(self._actuation and self._actuation._manual_estop_active)
             for i, lb in enumerate(self.lbl_nozzles):
-                lb.setText(f"N{i+1}: {'FIRING' if spray_states[i] else 'idle'}")
+                if estopped:
+                    lb.setText(f"N{i+1}: E-STOP")
+                else:
+                    lb.setText(f"N{i+1}: {'FIRING' if spray_states[i] else 'idle'}")
 
             if display_img is not None:
                 display_img = draw_triple_detection_overlay(
