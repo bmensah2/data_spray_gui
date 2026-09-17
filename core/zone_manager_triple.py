@@ -196,6 +196,20 @@ class ZoneState:
 
     current_detections: List[Detection] = field(default_factory=list)
 
+    @property
+    def name(self) -> str:
+        """
+        Alias for .label -- core/actuation_controller.py's
+        _make_event() (reused as-is from the 2-camera system, see
+        gui/panels/detection_panel_triple.py's module docstring)
+        expects zone.name specifically, matching the dual-camera
+        system's ZoneState which used that as its field name.
+        Kept as a property alias rather than renaming .label itself,
+        since .label is this module's own, already-tested and
+        documented field name throughout.
+        """
+        return self.label
+
     def contains_x(self, cx: int) -> bool:
         """
         True if pixel x-coordinate cx falls within this camera's
