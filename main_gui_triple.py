@@ -43,7 +43,7 @@ import sys
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QScrollArea, QPushButton, QComboBox, QLabel, QAction, QActionGroup,
-    QMessageBox,
+    QMessageBox, QDialog,
 )
 from PyQt5.QtCore import QTimer
 
@@ -53,6 +53,8 @@ from gui.style import _muted
 from gui.panels.gantry_panel import GantryPanel
 from gui.panels.triple_camera_panel import TripleCameraPanel
 from gui.panels.detection_panel_triple import DetectionPanelTriple
+from gui.panels.acquisition_panel_rgb import CameraSettingsWidget
+from core.triple_emeet_camera import CAM1_DEVICE, CAM2_DEVICE, CAM3_DEVICE
 
 
 class MainWindow(QMainWindow):
@@ -71,6 +73,20 @@ class MainWindow(QMainWindow):
         # Lets the fullscreen popout show its own Arm/Stop/E-Stop bar
         # (see TripleCameraPanel.open_fullscreen_view()).
         self.camera.detection_tab_ref = self.detect
+
+        # Camera Settings -- global, one v4l2 configuration applied to
+        # all 3 cameras (see gui/panels/acquisition_panel_rgb.py's
+        # CameraSettingsWidget, already fully generic for any device
+        # count -- confirmed in Phase 5 of the triple-camera redesign).
+        # Reachable from the toolbar via a single dialog, same
+        # convention as main_gui_rgb.py's own "Camera Settings" button
+        # -- not embedded per-tab. The "Edit Presets" button and full
+        # preset editor dialog are already built into
+        # CameraSettingsWidget itself, so nothing extra is needed here
+        # to get preset editing too.
+        self.camera_settings = CameraSettingsWidget(
+            [CAM1_DEVICE, CAM2_DEVICE, CAM3_DEVICE], self._sys_log)
+        self._camera_settings_dialog = None
 
         self._build_ui()
         theme_manager.register_widget(
@@ -111,6 +127,19 @@ class MainWindow(QMainWindow):
         toolbar.addWidget(self.hdr_btn_connect)
 
         toolbar.addSpacing(20)
+
+        self.hdr_btn_camera_settings = QPushButton("📷  Camera Settings")
+        theme_manager.register_widget(
+            self.hdr_btn_camera_settings, lambda p: (
+                f"QPushButton{{background:{p['input_bg']};color:{p['text']};"
+                f"border:1px solid {p['border']};border-radius:4px;"
+                f"padding:4px 12px;font-family:'Noto Sans',Arial,sans-serif;"
+                f"font-size:10px;}}"
+                f"QPushButton:hover{{background:{p['btn_hover']};}}"))
+        self.hdr_btn_camera_settings.setFixedHeight(26)
+        self.hdr_btn_camera_settings.clicked.connect(
+            self._open_camera_settings_dialog)
+        toolbar.addWidget(self.hdr_btn_camera_settings)
 
         self.hdr_btn_start_camera = QPushButton("▶  START CAMERAS")
         theme_manager.register_button(self.hdr_btn_start_camera, "green")
@@ -192,6 +221,31 @@ class MainWindow(QMainWindow):
             "(Cam 1→N1, Cam 2→N2, Cam 3→N3).\n\n"
             "Check the 'Static test' box in Detection to validate "
             "camera/nozzle alignment without driving the robot.")
+
+    # ── Camera settings dialog ─────────────────────────────────
+
+    def _open_camera_settings_dialog(self):
+        """
+        Open (or re-show) the global Camera Settings dialog, wrapping
+        self.camera_settings -- created once and reused on subsequent
+        clicks (show/raise/activate) rather than rebuilt every time,
+        same convention as main_gui_rgb.py's own
+        _open_camera_settings_dialog().
+        """
+        if self._camera_settings_dialog is None:
+            dlg = QDialog(self)
+            dlg.setWindowTitle("Camera Settings — applies to all 3 cameras")
+            dlg.setMinimumSize(480, 640)
+            theme_manager.register_widget(
+                dlg, lambda p: f"background-color:{p['bg']};")
+            lay = QVBoxLayout(dlg)
+            lay.setContentsMargins(0, 0, 0, 0)
+            lay.addWidget(self.camera_settings)
+            self._camera_settings_dialog = dlg
+
+        self._camera_settings_dialog.show()
+        self._camera_settings_dialog.raise_()
+        self._camera_settings_dialog.activateWindow()
 
     # ── Arduino connection ─────────────────────────────────────
 
