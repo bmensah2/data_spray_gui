@@ -338,6 +338,20 @@ class TripleCameraPanel:
 
     # ── Public API ────────────────────────────────────────────
 
+    @property
+    def current_frame(self):
+        """
+        Compatibility property for gui/panels/spray_panel.py and any
+        other shared panel that checks `camera.current_frame is not
+        None` -- same role as DualCameraPanel's identically-named
+        property. Returns the first camera's latest frame (Cam 1), or
+        None if not yet acquired; any one frame being present is a
+        reasonable "is the camera system acquiring" signal for that
+        check, which doesn't need all 3 specifically.
+        """
+        with self._frame_lock:
+            return self._frames[0].copy() if self._frames[0] is not None else None
+
     def get_frame_snapshot(self):
         """
         Thread-safe copy of the latest frame triple.

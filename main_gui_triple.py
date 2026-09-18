@@ -54,6 +54,8 @@ from gui.panels.gantry_panel import GantryPanel
 from gui.panels.triple_camera_panel import TripleCameraPanel
 from gui.panels.detection_panel_triple import DetectionPanelTriple
 from gui.panels.triple_capture_panel import TripleCapturePanel
+from gui.panels.spray_panel import SprayPanel
+from gui.panels.navigation_panel_rgb import NavigationPanelRGB
 from gui.tabs.tab_analysis_triple import AnalysisTabTriple
 from gui.panels.acquisition_panel_rgb import CameraSettingsWidget
 from core.triple_emeet_camera import CAM1_DEVICE, CAM2_DEVICE, CAM3_DEVICE
@@ -75,6 +77,34 @@ class MainWindow(QMainWindow):
         # Lets the fullscreen popout show its own Arm/Stop/E-Stop bar
         # (see TripleCameraPanel.open_fullscreen_view()).
         self.camera.detection_tab_ref = self.detect
+
+        # Spray panel (system checks, manual spray, nozzle test, demo)
+        # -- gui/panels/spray_panel.py's SprayPanel needed ZERO changes
+        # to reuse here: it already has no left/right or any other
+        # camera-count-specific dependency (its "Nozzles N1/N2/N3"
+        # check was always 3-nozzle, even in the 2-camera system,
+        # since there were always 3 physical nozzles). Shares the same
+        # gantry controller and camera panel as the rest of the app.
+        self.spray = SprayPanel(
+            self._sys_log,
+            gantry_ctrl_ref=lambda: self.gantry.ctrl,
+            camera_ref=lambda: self.camera)
+        self.gantry.state_signal.connect(self.spray.update_state)
+
+        # Navigation panel -- gui/panels/navigation_panel_rgb.py's
+        # NavigationPanelRGB, also reused unchanged. ros_bridge_ref
+        # resolves to whatever ROSBridge DetectionPanelTriple
+        # currently holds (None until armed, same as the 2-camera
+        # system's own pattern of only having odometry while armed).
+        # show_spray_mission=True: unlike the 2-camera system (which
+        # needs two separate NavigationPanelRGB instances, one per tab,
+        # and only shows Spray Mission on the one living in Detection),
+        # this app has ONE shared instance and ONE shared self.detect,
+        # so the Spray Mission section is always meaningful here.
+        self.nav = NavigationPanelRGB(
+            self._sys_log,
+            ros_bridge_ref=lambda: self.detect._odom,
+            show_spray_mission=True)
 
         self.capture = TripleCapturePanel(self._sys_log, self.camera)
         self.analysis = AnalysisTabTriple(self.gantry, self.detect)
@@ -152,6 +182,12 @@ class MainWindow(QMainWindow):
         self.camera._start_btns.append(self.hdr_btn_start_camera)
         toolbar.addWidget(self.hdr_btn_start_camera)
 
+        # View mode + Fullscreen (+ live status) live in the top
+        # toolbar, next to Start Cameras -- not in the Live Operation
+        # tab's left column, so they're reachable regardless of which
+        # sub-tab (Data Collection / Detection / Navigation) is active.
+        toolbar.addWidget(self.camera.camera_control_bar())
+
         toolbar.addStretch()
 
         self.lbl_arduino_status = QLabel("Arduino: disconnected")
@@ -179,16 +215,24 @@ class MainWindow(QMainWindow):
         left_lay.setContentsMargins(0, 0, 0, 0)
 
         left_tabs = QTabWidget()
-        left_tabs.addTab(self.detect,  "🎯 Detection")
         left_tabs.addTab(self.capture, "💾 Data Collection")
+
+        # Detection sub-tab, itself split into Spray | Detect --
+        # mirrors main_gui_rgb.py's DetectionTab left panel (SprayPanel
+        # + DetectionPanelRGB as two sub-tabs). Unlike that 2-camera
+        # layout, the Arm/Stop/E-Stop bar stays inside self.detect's
+        # own widget rather than a separately-extracted always-visible
+        # bar above both sub-tabs -- a real difference from
+        # main_gui_rgb.py's exact structure, called out here rather
+        # than silently diverging: it means the Arm bar is only
+        # visible on the "Detect" sub-tab, not the "Spray" one.
+        detection_tabs = QTabWidget()
+        detection_tabs.addTab(self.spray,  "💉 Spray")
+        detection_tabs.addTab(self.detect, "🎯 Detect")
+        left_tabs.addTab(detection_tabs, "🎯 Detection")
+
+        left_tabs.addTab(self.nav, "🧭 Navigation")
         left_lay.addWidget(left_tabs)
-
-        left_lay.addWidget(self.camera.camera_control_bar())
-
-        gantry_scroll = QScrollArea()
-        gantry_scroll.setWidgetResizable(True)
-        gantry_scroll.setWidget(self.gantry)
-        left_lay.addWidget(gantry_scroll, stretch=1)
 
         split.addWidget(left_col)
         split.addWidget(self.camera.display_widget(), stretch=1)
@@ -323,6 +367,7 @@ class MainWindow(QMainWindow):
         self.detect.cleanup()
         self.capture.cleanup()
         self.analysis.cleanup()
+        self.nav.cleanup()
         self.camera.cleanup()
         try:
             self.gantry.ctrl.disconnect()
