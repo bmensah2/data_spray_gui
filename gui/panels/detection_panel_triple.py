@@ -48,7 +48,7 @@ from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGroupBox, QLabel, QPushButton,
     QCheckBox,
 )
-from PyQt5.QtCore import Qt, QTimer
+from PyQt5.QtCore import Qt, QTimer, pyqtSignal
 
 from gui.style import _muted, _sec
 from gui.theme_manager import theme_manager
@@ -117,6 +117,13 @@ class DetectionPanelTriple(QWidget):
     + ZoneManagerTriple (Phase 1) decisions, geometry-timed through
     DistanceBufferedZone exactly like the 2-camera system.
     """
+
+    # Emitted with the new armed state whenever _det_start()/
+    # _det_stop() runs -- lets other UI (the camera panel's
+    # fullscreen popout, see TripleCameraPanel.open_fullscreen_view())
+    # stay in sync with the REAL armed state without polling, same
+    # role DetectionTab.armed_changed plays in the 2-camera system.
+    armed_changed = pyqtSignal(bool)
 
     def __init__(self, shared_log: UnifiedLog, camera,
                  gantry_ctrl_ref, parent=None):
@@ -303,6 +310,7 @@ class DetectionPanelTriple(QWidget):
             f"Armed (triple-camera) — threshold="
             f"{self._zone_cfg.detection_threshold} | "
             f"stub={self._engine.stub_mode}", "ok")
+        self.armed_changed.emit(True)
 
     def _det_stop(self):
         if not self._armed:
@@ -342,6 +350,7 @@ class DetectionPanelTriple(QWidget):
         for i, lb in enumerate(self.lbl_nozzles):
             lb.setText(f"N{i+1}: --")
         self.shared_log.log("DETECT", "Detection stopped", "info")
+        self.armed_changed.emit(False)
 
     def _det_estop(self, reason: str = "Operator pressed E-STOP"):
         """

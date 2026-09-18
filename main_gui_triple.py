@@ -68,6 +68,9 @@ class MainWindow(QMainWindow):
         self.detect = DetectionPanelTriple(
             self._sys_log, self.camera,
             gantry_ctrl_ref=lambda: self.gantry.ctrl)
+        # Lets the fullscreen popout show its own Arm/Stop/E-Stop bar
+        # (see TripleCameraPanel.open_fullscreen_view()).
+        self.camera.detection_tab_ref = self.detect
 
         self._build_ui()
         theme_manager.register_widget(

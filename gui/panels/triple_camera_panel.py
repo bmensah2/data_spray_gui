@@ -21,25 +21,34 @@ triple-camera system on real hardware with zero risk to the working
 Deliberately scoped for this first pass -- ported the essential flow
 (connect/start/stop, live 3-way side-by-side display with detection
 overlay, status reporting, camera settings passthrough) and left out
-for a later pass:
-  - Fullscreen popout dialog (DualCameraPanel's
-    open_fullscreen_view()/_FullscreenCameraDialog)
-  - Per-channel display modes (Red/Green/Blue) and Left/Right-only
-    single-camera views -- less clearly meaningful for 3 separate
-    physical cameras than they were for 2 halves of one zone system
-  - Zoom
+for a later pass: Zoom (note: DualCameraPanel itself has no zoom
+feature either, so there was never anything to match here).
 None of these affect whether the core system (camera capture -> zone
 decision -> nozzle firing) can be validated on real hardware, which is
 the immediate goal.
+
+UPDATE (Group A pass): fullscreen popout and per-camera view modes
+are now implemented, matching DualCameraPanel's own feature set as
+closely as the physical difference allows -- see DISPLAY_MODES below
+and open_fullscreen_view(). Per-channel (Red/Green/Blue) views are
+deliberately NOT ported: they operated on a single camera's frame in
+the 2-camera system, and don't have a clean equivalent across 3
+separate physical cameras (which camera's channel would it show?).
+"Cam 1/2/3 Only" single-camera views replace them instead.
 
 Public API (mirrors DualCameraPanel where the shape carries over):
   panel.camera_model          → str   e.g. "eMeet C960 4K (Triple)"
   panel.is_acquiring          → bool
   panel.on_detection_overlay  → callable(display_img) → img -- set by
                                 the triple-camera Detection tab
-  panel.camera_control_bar()  → QWidget   start/stop + status bar
+  panel.detection_tab_ref     → DetectionPanelTriple or None -- set by
+                                the standalone app so the fullscreen
+                                popout can show its own Arm/Stop/E-Stop
+                                bar (see open_fullscreen_view())
+  panel.camera_control_bar()  → QWidget   view mode + fullscreen + status
   panel.display_widget()      → QWidget   3-way side-by-side live feed
   panel.get_frame_snapshot()  → (frames: list of 3, meta: dict)
+  panel.open_fullscreen_view(parent) → QDialog
   panel.cleanup()
 """
 
@@ -49,7 +58,7 @@ import numpy as np
 
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout,
-    QLabel, QSizePolicy,
+    QLabel, QSizePolicy, QDialog, QComboBox, QPushButton,
 )
 from PyQt5.QtCore import Qt, QTimer
 from PyQt5.QtGui import QImage, QPixmap
@@ -62,6 +71,54 @@ try:
     from core.triple_emeet_camera import TripleEMEETCamera, FrameTriple
 except ImportError:
     from core.triple_emeet_camera import TripleEMEETCamera, FrameTriple
+
+# Per-camera single views replace DualCameraPanel's Left/Right Only
+# (there are 3 physical cameras here, not 2 halves of one system) --
+# Red/Green/Blue Channel views are dropped entirely, see module
+# docstring for why.
+DISPLAY_MODES = [
+    "Side by Side",
+    "Cam 1 Only",
+    "Cam 2 Only",
+    "Cam 3 Only",
+]
+
+
+class _FullscreenCameraDialogTriple(QDialog):
+    """
+    Fullscreen popout for the live triple-camera feed (see
+    TripleCameraPanel.open_fullscreen_view()).
+
+    Defined as a REAL QDialog subclass with keyPressEvent as a genuine
+    class method -- not assigned as an instance-level function
+    attribute. Overriding a Qt virtual event handler by setting
+    `dlg.keyPressEvent = some_function` is a known PyQt5 pitfall:
+    SIP's C++-to-Python virtual dispatch ("catcher") doesn't reliably
+    recognize an instance-attribute override the way it does a
+    genuine subclass method override, and can raise `TypeError:
+    invalid argument to sipBadCatcherResult()` at runtime. A real
+    subclass avoids that entirely (same lesson DualCameraPanel's own
+    _FullscreenCameraDialog documents).
+    """
+
+    def __init__(self, camera_panel, parent=None):
+        super().__init__(parent)
+        self._camera_panel = camera_panel
+        self._display_widget = None
+
+    def register_cleanup(self, display_widget):
+        self._display_widget = display_widget
+
+    def keyPressEvent(self, event):
+        if event.key() == Qt.Key_Escape:
+            self.close()
+        else:
+            super().keyPressEvent(event)
+
+    def closeEvent(self, event):
+        if self._display_widget is not None:
+            self._camera_panel.remove_display_widget(self._display_widget)
+        event.accept()
 
 try:
     from gui.overlay_rendering_triple import build_triple_side_by_side
@@ -101,6 +158,17 @@ class TripleCameraPanel:
         self._display_lbls:     list = []
         self._start_btns:       list = []
         self._status_lbls:      list = []
+        self._disp_mode_combos: list = []   # all view-mode combos, tracked
+                                             # so a change from ANY one
+                                             # (embedded tab or fullscreen)
+                                             # is reflected everywhere,
+                                             # same convention as
+                                             # DualCameraPanel's own list
+        # Set by the standalone app (main_gui_triple.py) so the
+        # fullscreen popout can show its own Arm/Stop/E-Stop bar --
+        # None until then means fullscreen just shows video with no
+        # detection controls.
+        self.detection_tab_ref = None
 
         self._display_timer = QTimer()
         self._display_timer.timeout.connect(self._refresh_display)
@@ -201,6 +269,27 @@ class TripleCameraPanel:
             except Exception:
                 pass
 
+        # View mode is applied AFTER the overlay, not instead of
+        # building the combined image -- draw_triple_detection_
+        # overlay() only knows how to draw zone boundaries/detections
+        # across the full 3-panel layout (it needs panel_w to know
+        # where each camera's section starts), so a single-camera
+        # view is built by cropping the already-overlaid combined
+        # image, not by skipping the overlay step. This means "Cam 2
+        # Only" still shows N2's zone boundary and any live
+        # detections, not a plain uncomposited feed.
+        mode = "Side by Side"
+        if self._disp_mode_combos:
+            mode = self._disp_mode_combos[0].currentText()
+        if mode in ("Cam 1 Only", "Cam 2 Only", "Cam 3 Only"):
+            idx = int(mode.split()[1]) - 1
+            x0 = idx * (panel_w + 4)
+            x1 = min(x0 + panel_w, disp_img.shape[1])
+            crop = disp_img[:, x0:x1]
+            if crop.size > 0:
+                target_h = int(disp_w / (1920 / 1080))
+                disp_img = cv2.resize(crop, (disp_w, max(1, target_h)))
+
         self._show(disp_img)
 
     def _largest_display_width(self, default=1280):
@@ -259,12 +348,17 @@ class TripleCameraPanel:
 
     # ── Widgets ───────────────────────────────────────────────
 
-    def camera_control_bar(self) -> QWidget:
+    def camera_control_bar(self, fullscreen_dialog=None) -> QWidget:
         """
-        Returns the camera toolbar widget (status only, for this
-        first pass -- no fullscreen/view-mode controls yet, see
-        module docstring). Start/Stop lives as a single global button
-        elsewhere in the app, same convention as DualCameraPanel.
+        Returns the camera toolbar widget (view mode + fullscreen +
+        status). Start/Stop lives as a single global button elsewhere
+        in the app, same convention as DualCameraPanel.
+
+        fullscreen_dialog: pass the QDialog this bar is being
+        embedded INSIDE (only from open_fullscreen_view() itself) so
+        the Fullscreen button becomes a Restore button that closes
+        that specific dialog, instead of opening another nested
+        fullscreen dialog on top of the current one.
         """
         bar = QWidget()
         bar.setFixedHeight(44)
@@ -273,7 +367,40 @@ class TripleCameraPanel:
         lay.setContentsMargins(6, 4, 6, 4)
         lay.setSpacing(6)
 
-        lay.addWidget(_muted("Triple RGB View — Cam1 / Cam2 / Cam3"))
+        lay.addWidget(_muted("View:"))
+        disp_combo = QComboBox()
+        disp_combo.addItems(DISPLAY_MODES)
+        disp_combo.setFixedHeight(28)
+        disp_combo.setMinimumWidth(120)
+        theme_manager.register_widget(
+            disp_combo, lambda p: (
+                f"QComboBox{{background:{p['input_bg']};color:{p['text']};"
+                f"border:1px solid {p['border']};border-radius:3px;"
+                f"padding:2px 6px;font-family:'Noto Sans',Arial,sans-serif;"
+                f"font-size:9px;}}"
+                f"QComboBox::drop-down{{border:none;}}"
+                f"QComboBox QAbstractItemView{{background:{p['input_bg']};"
+                f"color:{p['text']};"
+                f"selection-background-color:{p['btn_bg']};}}"))
+        lay.addWidget(disp_combo)
+        self._disp_mode_combos.append(disp_combo)
+
+        if fullscreen_dialog is not None:
+            fs_btn = QPushButton("📷 Restore")
+            fs_btn.clicked.connect(fullscreen_dialog.close)
+        else:
+            fs_btn = QPushButton("📷 Fullscreen")
+            fs_btn.clicked.connect(lambda: self.open_fullscreen_view(bar.window()))
+        theme_manager.register_widget(
+            fs_btn, lambda p: (
+                f"QPushButton{{background:{p['input_bg']};color:{p['text']};"
+                f"border:1px solid {p['border']};border-radius:3px;"
+                f"padding:4px 8px;font-family:'Noto Sans',Arial,sans-serif;"
+                f"font-size:9px;}}"
+                f"QPushButton:hover{{background:{p['btn_hover']};}}"))
+        fs_btn.setFixedHeight(28)
+        lay.addWidget(fs_btn)
+
         lay.addStretch()
 
         status_lbl = QLabel("Disconnected")
@@ -313,6 +440,122 @@ class TripleCameraPanel:
         lbl = container.findChild(QLabel)
         if lbl is not None and lbl in self._display_lbls:
             self._display_lbls.remove(lbl)
+
+    def open_fullscreen_view(self, parent=None) -> QDialog:
+        """
+        Open the live triple-camera feed in a fullscreen popup, with
+        its own view-mode/fullscreen control bar and (if
+        detection_tab_ref is set -- see main_gui_triple.py) an Arm/
+        Stop/E-Stop bar, so the operator doesn't need to exit
+        fullscreen to control detection.
+
+        Uses the same multi-display-widget mechanism display_widget()
+        already provides for embedding the feed in more than one
+        place at once: the popup gets its OWN QLabel via a fresh
+        display_widget() call, automatically kept in sync with live
+        frames in parallel with whatever's already embedded in the
+        main window -- no extra routing logic needed here.
+
+        Deliberately narrower than DualCameraPanel's own
+        open_fullscreen_view(): no embedded live stats/spray-event
+        sub-tables in this pass, since those depend on
+        DetectionPanelRGB's stats_updated/spray_event_signal Qt
+        signals, which DetectionPanelTriple doesn't emit (yet) --
+        those tables are already visible in the main window itself,
+        just not inside the fullscreen popup.
+        """
+        dlg = _FullscreenCameraDialogTriple(self, parent)
+        dlg.setWindowTitle("Live Triple Camera Feed — Fullscreen")
+        theme_manager.register_widget(
+            dlg, lambda p: f"background-color:{p['bg0']};")
+        lay = QVBoxLayout(dlg)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(0)
+
+        hint = QPushButton("Press Esc or click here to exit fullscreen")
+        hint.setFlat(True)
+        hint.setFixedHeight(22)
+        hint.setCursor(Qt.PointingHandCursor)
+        theme_manager.register_widget(
+            hint, lambda p: (
+                f"QPushButton{{background-color:{p['bg2']};"
+                f"color:{p['muted']};border:none;"
+                f"font-family:'Noto Sans',Arial,sans-serif;font-size:10px;}}"
+                f"QPushButton:hover{{color:{p['text']};}}"))
+        hint.clicked.connect(dlg.close)
+        lay.addWidget(hint)
+
+        if self.detection_tab_ref is not None:
+            det = self.detection_tab_ref
+
+            arm_bar = QWidget()
+            theme_manager.register_widget(
+                arm_bar, lambda p: f"background-color:{p['bg0']};")
+            arm_lay = QHBoxLayout(arm_bar)
+            arm_lay.setContentsMargins(8, 6, 8, 6)
+            arm_lay.setSpacing(8)
+
+            arm_lay.addWidget(_muted("DETECTION:"))
+
+            btn_arm = QPushButton("▶  ARM DETECTION")
+            theme_manager.register_button(btn_arm, "green")
+            btn_arm.setMinimumHeight(32)
+            btn_arm.setMinimumWidth(160)
+            btn_arm.clicked.connect(det._det_start)
+            arm_lay.addWidget(btn_arm)
+
+            btn_stop = QPushButton("⏹  STOP")
+            theme_manager.register_button(btn_stop, "dim_red")
+            btn_stop.setMinimumHeight(32)
+            btn_stop.clicked.connect(det._det_stop)
+            arm_lay.addWidget(btn_stop)
+
+            btn_estop = QPushButton("⚡  E-STOP")
+            theme_manager.register_button(btn_estop, "estop")
+            btn_estop.setMinimumHeight(32)
+            btn_estop.setMinimumWidth(100)
+            btn_estop.clicked.connect(det._det_estop)
+            arm_lay.addWidget(btn_estop)
+
+            arm_lay.addStretch()
+            arm_status = _muted("DISARMED")
+            arm_lay.addWidget(arm_status)
+
+            def _sync_arm_state(armed, _btn_arm=btn_arm, _btn_stop=btn_stop,
+                                _status=arm_status):
+                try:
+                    _btn_arm.setEnabled(not armed)
+                    theme_manager.register_button(
+                        _btn_arm, "dim_green" if armed else "green")
+                    _btn_stop.setEnabled(armed)
+                    theme_manager.register_button(
+                        _btn_stop, "red" if armed else "dim_red")
+                    _status.setText("ARMED" if armed else "DISARMED")
+                    theme_manager.register_widget(
+                        _status, lambda p, _armed=armed: (
+                            f"color:{p['amber'] if _armed else p['muted']};"
+                            f"font-size:10px;"
+                            f"font-family:'Noto Sans',Arial,sans-serif;"))
+                except RuntimeError:
+                    pass   # dialog/widgets already destroyed
+
+            # Initialize to whatever the REAL current armed state
+            # already is -- opening fullscreen while already armed
+            # (a very normal thing to do) must not show a stale
+            # "DISARMED" until the next explicit arm/disarm action.
+            _sync_arm_state(det.is_armed())
+            det.armed_changed.connect(_sync_arm_state)
+
+            lay.addWidget(arm_bar)
+
+        lay.addWidget(self.camera_control_bar(fullscreen_dialog=dlg))
+
+        display = self.display_widget()
+        lay.addWidget(display, stretch=1)
+
+        dlg.register_cleanup(display)
+        dlg.showFullScreen()
+        return dlg
 
     def toggle_start_stop(self):
         if self.is_acquiring:
@@ -387,3 +630,4 @@ class TripleCameraPanel:
         self._start_btns    = []
         self._status_lbls   = []
         self._display_lbls  = []
+        self._disp_mode_combos = []
