@@ -233,6 +233,9 @@ class DetectionPanelTriple(QWidget):
         # spray_active unchanged whenever speed < 0.05 m/s -- which is
         # exactly the situation with no Husky odometry connected.
         self._static_test = False
+        self._pump_enabled = False   # manual safety gate -- auto-spray
+                                      # blocked until explicitly enabled
+        self._purge = False          # manual "hold to fire all nozzles" test
 
         # Camera watchdog -- see _check_camera_watchdog()'s docstring
         # for the real-hardware bug this exists to close: a camera
@@ -321,7 +324,104 @@ class DetectionPanelTriple(QWidget):
             lambda state: setattr(self, "_static_test", state == Qt.Checked))
         lay.addWidget(self.chk_static_test)
 
+        lay.addWidget(self._pump_grp())
+        lay.addWidget(self._purge_grp())
+
         lay.addStretch()
+
+    def _pump_grp(self):
+        """
+        Pump enable toggle + prime button. Same design as the
+        2-camera system's own _pump_grp(): the pump must be manually
+        enabled before auto-spray can fire at all (a safety gate, not
+        the same thing as ARMED -- arming loads the detection
+        pipeline, enabling the pump is a separate, deliberate step
+        before it's allowed to actually dispense anything).
+        """
+        from PyQt5.QtWidgets import QSpinBox
+        grp = QGroupBox("Pump Control")
+        theme_manager.register_widget(
+            grp, lambda p: (
+                f"QGroupBox{{border:1px solid {p['border']};border-radius:4px;"
+                f"margin-top:8px;color:{p['muted2']};font-size:10px;"
+                f"font-weight:bold;}}"
+                f"QGroupBox::title{{subcontrol-origin:margin;padding:0 4px;}}"))
+        lay = QVBoxLayout(grp)
+        lay.setSpacing(6)
+        lay.setContentsMargins(8, 10, 8, 8)
+
+        toggle_row = QHBoxLayout()
+        self.lbl_pump_state = QLabel("PUMP  DISABLED")
+        theme_manager.register_widget(
+            self.lbl_pump_state, lambda p: (
+                f"color:{p['red']};font-family:'Noto Sans',Arial,sans-serif;"
+                f"font-size:10px;font-weight:bold;"))
+        toggle_row.addWidget(self.lbl_pump_state)
+        toggle_row.addStretch()
+
+        self.btn_pump_enable = QPushButton("⚡  ENABLE PUMP")
+        theme_manager.register_button(self.btn_pump_enable, "green")
+        self.btn_pump_enable.setMinimumHeight(28)
+        self.btn_pump_enable.setMinimumWidth(130)
+        self.btn_pump_enable.clicked.connect(self._pump_toggle)
+        toggle_row.addWidget(self.btn_pump_enable)
+        lay.addLayout(toggle_row)
+
+        lay.addWidget(_muted(
+            "Pump must be ENABLED before auto-spray will fire"))
+
+        prime_row = QHBoxLayout()
+        prime_row.addWidget(_muted("Prime duration (s):"))
+        self.spn_prime = QSpinBox()
+        self.spn_prime.setRange(1, 30)
+        self.spn_prime.setValue(3)
+        self.spn_prime.setFixedWidth(60)
+        theme_manager.register_widget(
+            self.spn_prime, lambda p: (
+                f"QSpinBox{{background:{p['input_bg']};color:{p['text']};"
+                f"border:1px solid {p['border']};border-radius:3px;"
+                f"font-family:'Noto Sans',Arial,sans-serif;font-size:10px;"
+                f"padding:2px;}}"))
+        prime_row.addWidget(self.spn_prime)
+        prime_row.addStretch()
+
+        self.btn_prime = QPushButton("💧  PRIME PUMP")
+        theme_manager.register_button(self.btn_prime, "blue")
+        self.btn_prime.setMinimumHeight(28)
+        self.btn_prime.setMinimumWidth(120)
+        self.btn_prime.clicked.connect(self._prime_pump)
+        prime_row.addWidget(self.btn_prime)
+        lay.addLayout(prime_row)
+
+        self.lbl_prime_status = QLabel("")
+        theme_manager.register_widget(
+            self.lbl_prime_status, lambda p: (
+                f"color:{p['blue']};font-size:9px;"
+                f"font-family:'Noto Sans',Arial,sans-serif;"))
+        lay.addWidget(self.lbl_prime_status)
+
+        return grp
+
+    def _purge_grp(self):
+        grp = QGroupBox("Manual Purge / Nozzle Test")
+        lay = QVBoxLayout(grp)
+        lay.addWidget(_muted(
+            "Hold to open all nozzles — robot must be moving"))
+        self.btn_purge = QPushButton("⏺  HOLD TO PURGE")
+        theme_manager.register_widget(
+            self.btn_purge, lambda p: (
+                f"QPushButton{{background-color:{p['bg2']};"
+                f"color:{p['amber']};border:1px solid {p['amber']};"
+                f"border-radius:4px;padding:6px;"
+                f"font-family:'Noto Sans',Arial,sans-serif;"
+                f"font-size:10px;font-weight:bold;}}"
+                f"QPushButton:pressed{{background-color:{p['amber']};"
+                f"color:#000;}}"))
+        self.btn_purge.setMinimumHeight(32)
+        self.btn_purge.pressed.connect(self._purge_start)
+        self.btn_purge.released.connect(self._purge_stop)
+        lay.addWidget(self.btn_purge)
+        return grp
 
     # ── Arm / Stop / E-Stop ───────────────────────────────────
 
@@ -664,6 +764,102 @@ class DetectionPanelTriple(QWidget):
         self._events_history.append(event)
         self.lbl_events.setText(f"Spray events: {self._events}")
 
+    # ── Pump toggle / prime / purge ───────────────────────────
+
+    def _pump_toggle(self):
+        """Enable or disable the pump safety gate."""
+        self._pump_enabled = not self._pump_enabled
+
+        if self._pump_enabled:
+            if self._actuation:
+                try:
+                    self._actuation.manual_pump(True)
+                except Exception:
+                    pass
+            elif self.gantry_ctrl_ref:
+                try:
+                    g = self.gantry_ctrl_ref()
+                    if g and g.state.connected:
+                        g.send_command("pump on")
+                except Exception:
+                    pass
+            self.lbl_pump_state.setText("PUMP  ENABLED ●")
+            theme_manager.register_widget(
+                self.lbl_pump_state, lambda p: (
+                    f"color:{p['green']};font-family:'Noto Sans',Arial,sans-serif;"
+                    f"font-size:10px;font-weight:bold;"))
+            self.btn_pump_enable.setText("⛔  DISABLE PUMP")
+            theme_manager.register_button(self.btn_pump_enable, "red")
+            self.shared_log.log(
+                "DETECT", "Pump ENABLED — auto-spray armed", "ok")
+        else:
+            if self._actuation:
+                try:
+                    self._actuation.manual_pump(False)
+                except Exception:
+                    pass
+            elif self.gantry_ctrl_ref:
+                try:
+                    g = self.gantry_ctrl_ref()
+                    if g and g.state.connected:
+                        g.send_command("pump off")
+                except Exception:
+                    pass
+            self.lbl_pump_state.setText("PUMP  DISABLED")
+            theme_manager.register_widget(
+                self.lbl_pump_state, lambda p: (
+                    f"color:{p['red']};font-family:'Noto Sans',Arial,sans-serif;"
+                    f"font-size:10px;font-weight:bold;"))
+            self.btn_pump_enable.setText("⚡  ENABLE PUMP")
+            theme_manager.register_button(self.btn_pump_enable, "green")
+            self.shared_log.log(
+                "DETECT", "Pump DISABLED — auto-spray blocked", "warn")
+
+    def _prime_pump(self):
+        """Run pump for prime duration, then stop (or restore to the
+        current enable-toggle state, matching the 2-camera system)."""
+        duration_s = self.spn_prime.value()
+        try:
+            g = self.gantry_ctrl_ref() if self.gantry_ctrl_ref else None
+            if g and g.state.connected:
+                g.send_command("pump on")
+                self.lbl_prime_status.setText(f"Priming … {duration_s}s")
+                self.btn_prime.setEnabled(False)
+                self.shared_log.log(
+                    "DETECT", f"Priming pump for {duration_s}s", "info")
+
+                def _stop_prime():
+                    try:
+                        g.send_command("pump off")
+                        if self._pump_enabled:
+                            g.send_command("pump on")
+                    except Exception:
+                        pass
+                    self.lbl_prime_status.setText("Prime complete ✓")
+                    self.btn_prime.setEnabled(True)
+                    self.shared_log.log("DETECT", "Prime complete", "ok")
+
+                self._prime_timer = QTimer()
+                self._prime_timer.setSingleShot(True)
+                self._prime_timer.timeout.connect(_stop_prime)
+                self._prime_timer.start(duration_s * 1000)
+            else:
+                self.lbl_prime_status.setText("Arduino not connected")
+                self.shared_log.log(
+                    "DETECT", "Prime failed — Arduino not connected", "warn")
+        except Exception as e:
+            self.lbl_prime_status.setText(f"Prime error: {e}")
+
+    def _purge_start(self):
+        self._purge = True
+        self.shared_log.log("DETECT", "Purge START — nozzles open", "warn")
+
+    def _purge_stop(self):
+        self._purge = False
+        for z in self._dist_zones:
+            z.reset()
+        self.shared_log.log("DETECT", "Purge STOP", "info")
+
     # ── Core inference loop ───────────────────────────────────
 
     def _run_inference(self, display_img):
@@ -733,10 +929,10 @@ class DetectionPanelTriple(QWidget):
             for i in range(3):
                 trig = nozzle_trigger[i] if nozzle_trigger[i] is not None else 0.0
                 state = self._dist_zones[i].update(
-                    has_detection  = zone_hits[i],
+                    has_detection  = zone_hits[i] and self._pump_enabled,
                     pose           = pose,
                     speed          = effective_speed,
-                    manual_purge   = False,
+                    manual_purge   = (self._purge and self._pump_enabled),
                     trigger_dist_m = trig,
                     spray_time_s   = nozzle_spray_t[i],
                 )
