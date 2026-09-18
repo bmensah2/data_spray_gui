@@ -291,13 +291,26 @@ class DetectionPanelTriple(QWidget):
         self.lbl_fps   = QLabel("FPS: --")
         self.lbl_inf   = QLabel("Inference: --")
         self.lbl_events = QLabel("Spray events: 0")
-        for w in (self.lbl_armed, self.lbl_fps, self.lbl_inf, self.lbl_events):
+        self.lbl_pose   = QLabel("Pose: --")
+        for w in (self.lbl_armed, self.lbl_fps, self.lbl_inf,
+                  self.lbl_events, self.lbl_pose):
             theme_manager.register_widget(
                 w, lambda p: (
                     f"color:{p['text']};font-size:10px;"
                     f"font-family:'Noto Sans',Arial,sans-serif;"))
             sg.addWidget(w)
         lay.addWidget(status_grp)
+
+        event_grp = QGroupBox("Last Spray Event")
+        eg = QVBoxLayout(event_grp)
+        self.lbl_last_event = QLabel("No spray events yet")
+        theme_manager.register_widget(
+            self.lbl_last_event, lambda p: (
+                f"color:{p['muted']};font-size:10px;"
+                f"font-family:'Noto Sans',Arial,sans-serif;"))
+        self.lbl_last_event.setWordWrap(True)
+        eg.addWidget(self.lbl_last_event)
+        lay.addWidget(event_grp)
 
         noz_grp = QGroupBox("Nozzles")
         ng = QHBoxLayout(noz_grp)
@@ -764,6 +777,17 @@ class DetectionPanelTriple(QWidget):
         self._events_history.append(event)
         self.lbl_events.setText(f"Spray events: {self._events}")
 
+        names = [d["class_name"] for d in event.detections]
+        conf  = max((d["confidence"] for d in event.detections), default=0.0)
+        ts = datetime.datetime.fromtimestamp(
+            event.timestamp).strftime("%H:%M:%S")
+        self.lbl_last_event.setText(
+            f"{event.zone_name} | {names} | conf={conf:.2f} | {ts}")
+        theme_manager.register_widget(
+            self.lbl_last_event, lambda p: (
+                f"color:{p['green']};font-size:10px;"
+                f"font-family:'Noto Sans',Arial,sans-serif;"))
+
     # ── Pump toggle / prime / purge ───────────────────────────
 
     def _pump_toggle(self):
@@ -973,6 +997,11 @@ class DetectionPanelTriple(QWidget):
 
             self.lbl_fps.setText(f"FPS: {self._fps:.1f}")
             self.lbl_inf.setText(f"Inference: {result.total_ms:.1f}ms")
+            if self._odom and pose:
+                self.lbl_pose.setText(
+                    f"pos({pose['x']:.2f},{pose['y']:.2f}) "
+                    f"hdg={pose['heading']:.0f}° "
+                    f"spd={pose['speed']:.2f}m/s")
             estopped = bool(self._actuation and self._actuation._manual_estop_active)
             for i, lb in enumerate(self.lbl_nozzles):
                 if estopped:
