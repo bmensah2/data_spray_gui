@@ -43,7 +43,7 @@ import sys
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QScrollArea, QPushButton, QComboBox, QLabel, QAction, QActionGroup,
-    QMessageBox, QDialog,
+    QMessageBox, QDialog, QTabWidget,
 )
 from PyQt5.QtCore import QTimer
 
@@ -53,6 +53,7 @@ from gui.style import _muted
 from gui.panels.gantry_panel import GantryPanel
 from gui.panels.triple_camera_panel import TripleCameraPanel
 from gui.panels.detection_panel_triple import DetectionPanelTriple
+from gui.panels.triple_capture_panel import TripleCapturePanel
 from gui.panels.acquisition_panel_rgb import CameraSettingsWidget
 from core.triple_emeet_camera import CAM1_DEVICE, CAM2_DEVICE, CAM3_DEVICE
 
@@ -73,6 +74,8 @@ class MainWindow(QMainWindow):
         # Lets the fullscreen popout show its own Arm/Stop/E-Stop bar
         # (see TripleCameraPanel.open_fullscreen_view()).
         self.camera.detection_tab_ref = self.detect
+
+        self.capture = TripleCapturePanel(self._sys_log, self.camera)
 
         # Camera Settings -- global, one v4l2 configuration applied to
         # all 3 cameras (see gui/panels/acquisition_panel_rgb.py's
@@ -164,7 +167,12 @@ class MainWindow(QMainWindow):
         left_col.setMaximumWidth(420)
         left_lay = QVBoxLayout(left_col)
         left_lay.setContentsMargins(0, 0, 0, 0)
-        left_lay.addWidget(self.detect)
+
+        left_tabs = QTabWidget()
+        left_tabs.addTab(self.detect,  "🎯 Detection")
+        left_tabs.addTab(self.capture, "💾 Data Collection")
+        left_lay.addWidget(left_tabs)
+
         left_lay.addWidget(self.camera.camera_control_bar())
 
         gantry_scroll = QScrollArea()
@@ -300,6 +308,7 @@ class MainWindow(QMainWindow):
     def closeEvent(self, event):
         self._status_timer.stop()
         self.detect.cleanup()
+        self.capture.cleanup()
         self.camera.cleanup()
         try:
             self.gantry.ctrl.disconnect()
