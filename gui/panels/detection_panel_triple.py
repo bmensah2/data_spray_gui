@@ -193,6 +193,13 @@ class DetectionPanelTriple(QWidget):
     # role DetectionTab.armed_changed plays in the 2-camera system.
     armed_changed = pyqtSignal(bool)
 
+    # Emitted from _on_spray_event()/_det_start() -- lets Session
+    # Analysis (Group E) subscribe to the live event feed and session
+    # start/reset independently of polling, same role
+    # DetectionPanelRGB's identically-named signals play.
+    spray_event_signal = pyqtSignal(object)
+    session_started    = pyqtSignal(str)
+
     def __init__(self, shared_log: UnifiedLog, camera,
                  gantry_ctrl_ref, parent=None):
         super().__init__(parent)
@@ -525,6 +532,7 @@ class DetectionPanelTriple(QWidget):
         self._session_id     = session_id
         self._session_start  = time.time()
         self._events_history = []
+        self.session_started.emit(session_id)
 
         if ROS_BRIDGE_AVAILABLE:
             try:
@@ -787,6 +795,7 @@ class DetectionPanelTriple(QWidget):
             self.lbl_last_event, lambda p: (
                 f"color:{p['green']};font-size:10px;"
                 f"font-family:'Noto Sans',Arial,sans-serif;"))
+        self.spray_event_signal.emit(event)
 
     # ── Pump toggle / prime / purge ───────────────────────────
 
@@ -1020,6 +1029,26 @@ class DetectionPanelTriple(QWidget):
 
     def is_armed(self) -> bool:
         return self._armed
+
+    def get_actuation_status(self):
+        """Return ActuationController.get_status() dict, or None if
+        detection isn't armed / no controller exists right now."""
+        if self._actuation is not None:
+            try:
+                return self._actuation.get_status()
+            except Exception:
+                return None
+        return None
+
+    def get_husky_status(self):
+        """Return ROSBridge.get_status() dict, or None if detection
+        isn't armed / no bridge exists right now."""
+        if self._odom is not None:
+            try:
+                return self._odom.get_status()
+            except Exception:
+                return None
+        return None
 
     def emergency_stop(self):
         self._det_estop()

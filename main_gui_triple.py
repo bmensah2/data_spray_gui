@@ -54,6 +54,7 @@ from gui.panels.gantry_panel import GantryPanel
 from gui.panels.triple_camera_panel import TripleCameraPanel
 from gui.panels.detection_panel_triple import DetectionPanelTriple
 from gui.panels.triple_capture_panel import TripleCapturePanel
+from gui.tabs.tab_analysis_triple import AnalysisTabTriple
 from gui.panels.acquisition_panel_rgb import CameraSettingsWidget
 from core.triple_emeet_camera import CAM1_DEVICE, CAM2_DEVICE, CAM3_DEVICE
 
@@ -76,6 +77,7 @@ class MainWindow(QMainWindow):
         self.camera.detection_tab_ref = self.detect
 
         self.capture = TripleCapturePanel(self._sys_log, self.camera)
+        self.analysis = AnalysisTabTriple(self.gantry, self.detect)
 
         # Camera Settings -- global, one v4l2 configuration applied to
         # all 3 cameras (see gui/panels/acquisition_panel_rgb.py's
@@ -160,8 +162,16 @@ class MainWindow(QMainWindow):
         toolbar.addWidget(self.lbl_arduino_status)
         outer.addLayout(toolbar)
 
-        # ── Main split: controls (left) | live camera view (right) ──
-        split = QHBoxLayout()
+        # ── Main area: "Live Operation" (controls + camera view) and
+        # "Session Analysis" (full-width, needs the room for its
+        # wide event-feed table) as top-level tabs, rather than
+        # cramming the analysis table into the 420px-wide left
+        # column alongside Detection/Data Collection. ──
+        main_tabs = QTabWidget()
+
+        live_tab = QWidget()
+        split = QHBoxLayout(live_tab)
+        split.setContentsMargins(0, 0, 0, 0)
 
         left_col = QWidget()
         left_col.setMaximumWidth(420)
@@ -182,7 +192,10 @@ class MainWindow(QMainWindow):
 
         split.addWidget(left_col)
         split.addWidget(self.camera.display_widget(), stretch=1)
-        outer.addLayout(split, stretch=1)
+
+        main_tabs.addTab(live_tab, "🎥 Live Operation")
+        main_tabs.addTab(self.analysis, "📊 Session Analysis")
+        outer.addWidget(main_tabs, stretch=1)
 
         self._sys_log.log("SYS", "Triple-camera app ready", "ok")
 
@@ -309,6 +322,7 @@ class MainWindow(QMainWindow):
         self._status_timer.stop()
         self.detect.cleanup()
         self.capture.cleanup()
+        self.analysis.cleanup()
         self.camera.cleanup()
         try:
             self.gantry.ctrl.disconnect()
