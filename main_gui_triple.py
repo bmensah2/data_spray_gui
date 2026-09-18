@@ -49,7 +49,7 @@ from PyQt5.QtCore import QTimer
 
 from gui.theme_manager import theme_manager
 from gui.shared_log import UnifiedLog
-from gui.style import _muted
+from gui.style import LED, _muted, _divider
 from gui.panels.gantry_panel import GantryPanel
 from gui.panels.triple_camera_panel import TripleCameraPanel
 from gui.panels.detection_panel_triple import DetectionPanelTriple
@@ -144,6 +144,10 @@ class MainWindow(QMainWindow):
         outer.setContentsMargins(6, 6, 6, 6)
         outer.setSpacing(6)
 
+        # ── Row 0: System status (LEDs + checklist), matching
+        # main_gui_rgb.py's own header design ──
+        outer.addWidget(self._header_status())
+
         # ── Top toolbar: Arduino connect + Start Cameras ──
         toolbar = QHBoxLayout()
         toolbar.addWidget(_muted("Arduino:"))
@@ -217,21 +221,42 @@ class MainWindow(QMainWindow):
         left_tabs = QTabWidget()
         left_tabs.addTab(self.capture, "💾 Data Collection")
 
-        # Detection sub-tab, itself split into Spray | Detect --
-        # mirrors main_gui_rgb.py's DetectionTab left panel (SprayPanel
-        # + DetectionPanelRGB as two sub-tabs). Unlike that 2-camera
-        # layout, the Arm/Stop/E-Stop bar stays inside self.detect's
-        # own widget rather than a separately-extracted always-visible
-        # bar above both sub-tabs -- a real difference from
-        # main_gui_rgb.py's exact structure, called out here rather
-        # than silently diverging: it means the Arm bar is only
-        # visible on the "Detect" sub-tab, not the "Spray" one.
+        # Detection sub-tab: an always-visible Arm/Stop/E-Stop bar
+        # above inner Spray | Detect sub-tabs -- matches
+        # main_gui_rgb.py's DetectionTab exactly (its own
+        # _detection_arm_bar() sits above the same Spray/Detect pair
+        # for the same reason: the bar must stay visible regardless
+        # of which inner sub-tab is selected).
+        detection_w = QWidget()
+        detection_lay = QVBoxLayout(detection_w)
+        detection_lay.setContentsMargins(0, 0, 0, 0)
+        detection_lay.setSpacing(0)
+        detection_lay.addWidget(self._detection_arm_bar())
+        detection_lay.addWidget(_divider())
+
         detection_tabs = QTabWidget()
         detection_tabs.addTab(self.spray,  "💉 Spray")
         detection_tabs.addTab(self.detect, "🎯 Detect")
-        left_tabs.addTab(detection_tabs, "🎯 Detection")
+        detection_lay.addWidget(detection_tabs)
+        left_tabs.addTab(detection_w, "🎯 Detection")
 
-        left_tabs.addTab(self.nav, "🧭 Navigation")
+        # Navigation sub-tab: AUX (Light / Motor PSU) controls above
+        # the navigation panel itself. main_gui_rgb.py never visually
+        # embeds GantryPanel at all (confirmed: self.gantry there is
+        # constructed purely for .ctrl, never added to a layout), but
+        # AUX specifically was asked to stay visible here -- reuses
+        # GantryPanel._aux_group() directly (a standalone QGroupBox
+        # built from self.gantry.ctrl, no dependency on any other
+        # GantryPanel group having been built first) rather than
+        # embedding the whole panel just for this one group.
+        nav_w = QWidget()
+        nav_lay = QVBoxLayout(nav_w)
+        nav_lay.setContentsMargins(0, 0, 0, 0)
+        nav_lay.setSpacing(0)
+        nav_lay.addWidget(self.gantry._aux_group())
+        nav_lay.addWidget(self.nav, stretch=1)
+        left_tabs.addTab(nav_w, "🧭 Navigation")
+
         left_lay.addWidget(left_tabs)
 
         split.addWidget(left_col)
@@ -242,6 +267,148 @@ class MainWindow(QMainWindow):
         outer.addWidget(main_tabs, stretch=1)
 
         self._sys_log.log("SYS", "Triple-camera app ready", "ok")
+
+    def _detection_arm_bar(self) -> QWidget:
+        """
+        Always-visible ARM/STOP/E-STOP bar above the Detection
+        sub-tab's Spray | Detect inner tabs -- matches
+        main_gui_rgb.py's DetectionTab._detection_arm_bar(), which
+        exists for exactly this reason: so the bar doesn't disappear
+        depending on which inner sub-tab is selected. Calls
+        self.detect's private _det_start()/_det_stop()/_det_estop()
+        directly (DetectionPanelTriple's own btn_arm/btn_stop/
+        btn_estop are still constructed there for internal state
+        tracking, just no longer added to its own visible layout --
+        see detection_panel_triple.py's _build_ui() comment).
+        """
+        w = QWidget()
+        theme_manager.register_widget(w, lambda p: f"background-color:{p['bg0']};")
+        lay = QHBoxLayout(w)
+        lay.setContentsMargins(8, 6, 8, 6)
+        lay.setSpacing(8)
+
+        lay.addWidget(_muted("DETECTION:"))
+
+        self.btn_arm_start = QPushButton("▶  ARM DETECTION")
+        theme_manager.register_button(self.btn_arm_start, "green")
+        self.btn_arm_start.setMinimumHeight(32)
+        self.btn_arm_start.setMinimumWidth(160)
+        self.btn_arm_start.clicked.connect(self._on_arm)
+        lay.addWidget(self.btn_arm_start)
+
+        self.btn_arm_stop = QPushButton("⏹  STOP")
+        theme_manager.register_button(self.btn_arm_stop, "dim_red")
+        self.btn_arm_stop.setMinimumHeight(32)
+        self.btn_arm_stop.setEnabled(False)
+        self.btn_arm_stop.clicked.connect(self._on_stop)
+        lay.addWidget(self.btn_arm_stop)
+
+        self.btn_arm_estop = QPushButton("⚡  E-STOP")
+        theme_manager.register_button(self.btn_arm_estop, "estop")
+        self.btn_arm_estop.setMinimumHeight(32)
+        self.btn_arm_estop.setMinimumWidth(100)
+        self.btn_arm_estop.clicked.connect(self._on_estop)
+        lay.addWidget(self.btn_arm_estop)
+
+        lay.addStretch()
+
+        self.arm_led = LED(14)
+        lay.addWidget(self.arm_led)
+        self.arm_status = _muted("DISARMED")
+        lay.addWidget(self.arm_status)
+
+        # Sync to whatever the real armed state already is (in case
+        # this bar is ever rebuilt after detection was already armed)
+        # and keep it in sync going forward via the real signal.
+        self._sync_arm_bar(self.detect.is_armed())
+        self.detect.armed_changed.connect(self._sync_arm_bar)
+
+        return w
+
+    def _sync_arm_bar(self, armed: bool):
+        self.btn_arm_start.setEnabled(not armed)
+        theme_manager.register_button(
+            self.btn_arm_start, "dim_green" if armed else "green")
+        self.btn_arm_stop.setEnabled(armed)
+        theme_manager.register_button(
+            self.btn_arm_stop, "red" if armed else "dim_red")
+        self.arm_led.set_state(armed, role="amber")
+        self.arm_status.setText("ARMED" if armed else "DISARMED")
+        theme_manager.register_widget(
+            self.arm_status, lambda p, _armed=armed: (
+                f"color:{p['amber'] if _armed else p['muted']};"
+                f"font-size:10px;font-family:'Noto Sans',Arial,sans-serif;"))
+
+    def _on_arm(self):
+        self.detect._det_start()
+
+    def _on_stop(self):
+        self.detect._det_stop()
+
+    def _on_estop(self):
+        self.detect._det_estop()
+        self.spray.emergency_stop()
+
+    def _header_status(self) -> QWidget:
+        """
+        System status LEDs + checklist + summary line, matching
+        main_gui_rgb.py's own header design (Gantry/Camera/Detect/Nav
+        LEDs, a Camera/Arduino/Armed/Pump checklist, and an "ALL
+        SYSTEMS ONLINE" / "SYSTEM NOT READY (n/4)" summary) -- all
+        driven from _refresh_header(), the same 500ms timer already
+        polling Arduino/port state, no new polling added.
+        """
+        row = QWidget()
+        theme_manager.register_widget(row, lambda p: f"background-color:{p['bg0']};")
+        lay = QHBoxLayout(row)
+        lay.setContentsMargins(6, 4, 6, 4)
+        lay.setSpacing(10)
+
+        for led_attr, lbl_text, palette_key in [
+            ("led_gantry", "GANTRY", "green"),
+            ("led_camera", "CAMERA", "blue"),
+            ("led_detect", "DETECT", "amber"),
+            ("led_nav",    "NAV",    "purple"),
+        ]:
+            led = LED(12)
+            lbl = QLabel(lbl_text)
+            theme_manager.register_widget(
+                lbl, lambda p, k=palette_key: (
+                    f"color:{p[k]};font-size:10px;"
+                    f"font-family:'Noto Sans',Arial,sans-serif;font-weight:bold;"
+                    f"margin-right:6px;"))
+            lay.addWidget(led)
+            lay.addWidget(lbl)
+            setattr(self, led_attr, led)
+
+        lay.addWidget(_divider())
+
+        def _mk_check_label(initial_text):
+            lbl = QLabel(initial_text)
+            theme_manager.register_widget(
+                lbl, lambda p: (
+                    f"color:{p['amber']};font-size:10px;"
+                    f"font-family:'Noto Sans',Arial,sans-serif;font-weight:bold;"))
+            return lbl
+
+        self.chk_camera  = _mk_check_label("⚠  Camera")
+        self.chk_arduino = _mk_check_label("⚠  Arduino")
+        self.chk_armed   = _mk_check_label("⚠  Armed")
+        self.chk_pump    = _mk_check_label("⚠  Pump")
+        for lbl in (self.chk_camera, self.chk_arduino,
+                   self.chk_armed, self.chk_pump):
+            lay.addWidget(lbl)
+
+        lay.addStretch()
+
+        self.system_summary = QLabel("⚠  SYSTEM NOT READY")
+        theme_manager.register_widget(
+            self.system_summary, lambda p: (
+                f"color:{p['amber']};font-size:11px;"
+                f"font-family:'Noto Sans',Arial,sans-serif;font-weight:bold;"))
+        lay.addWidget(self.system_summary)
+
+        return row
 
     def _build_menu(self):
         mb = self.menuBar()
@@ -359,6 +526,50 @@ class MainWindow(QMainWindow):
             f"Arduino: {'connected — ' + port if connected else 'disconnected'}"
             if connected and (port := self.hdr_port_combo.currentText())
             else f"Arduino: {'connected' if connected else 'disconnected'}")
+
+        # ── Status LEDs ───────────────────────────────────
+        self.led_gantry.set_state(connected)
+        self.led_camera.set_state(self.camera.is_acquiring, role="blue")
+        armed = self.detect.is_armed()
+        self.led_detect.set_state(armed, role="amber")
+        bridge = self.detect._odom
+        nav_connected = bridge is not None and bridge.is_connected()
+        self.led_nav.set_state(nav_connected, role="purple")
+
+        # ── System checklist ───────────────────────────────
+        camera_on = self.camera.is_acquiring
+        # Real Arduino-confirmed pump state, not a locally-set
+        # optimistic flag -- same source main_gui_rgb.py's own
+        # checklist deliberately uses (see its own comment on this
+        # exact point).
+        pump_on = self.gantry.ctrl.state.pump_on
+
+        def _set_check(lbl, ok, label_text):
+            lbl.setText(f"{'✓' if ok else '⚠'}  {label_text}")
+            theme_manager.register_widget(
+                lbl, lambda p, _ok=ok: (
+                    f"color:{p['green'] if _ok else p['amber']};"
+                    f"font-size:10px;"
+                    f"font-family:'Noto Sans',Arial,sans-serif;"
+                    f"font-weight:bold;"))
+
+        _set_check(self.chk_camera, camera_on, "Camera")
+        _set_check(self.chk_arduino, connected, "Arduino")
+        _set_check(self.chk_armed, armed, "Armed")
+        _set_check(self.chk_pump, pump_on, "Pump")
+
+        all_ok = camera_on and connected and armed and pump_on
+        n_ok = sum([camera_on, connected, armed, pump_on])
+        if all_ok:
+            self.system_summary.setText("✓  ALL SYSTEMS ONLINE")
+            summary_key = "green"
+        else:
+            self.system_summary.setText(f"⚠  SYSTEM NOT READY  ({n_ok}/4)")
+            summary_key = "amber"
+        theme_manager.register_widget(
+            self.system_summary, lambda p, k=summary_key: (
+                f"color:{p[k]};font-size:11px;"
+                f"font-family:'Noto Sans',Arial,sans-serif;font-weight:bold;"))
 
     # ── Cleanup ───────────────────────────────────────────────
 

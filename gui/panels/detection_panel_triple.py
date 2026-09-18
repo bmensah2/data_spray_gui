@@ -274,23 +274,27 @@ class DetectionPanelTriple(QWidget):
 
         lay.addWidget(_sec("Detection — Triple Camera"))
 
-        btn_row = QHBoxLayout()
+        # Arm/Stop/E-Stop buttons are constructed here (still tracked
+        # via self.btn_arm/btn_stop/btn_estop for is_armed()-adjacent
+        # enable/disable state), but deliberately NOT added to this
+        # widget's own visible layout -- the operator asked for an
+        # always-visible Arm bar above BOTH the Spray and Detect
+        # sub-tabs (matching main_gui_rgb.py's DetectionTab, which
+        # extracts its own arm bar the same way, entirely outside
+        # DetectionPanelRGB), not one that disappears when Spray is
+        # selected. See main_gui_triple.py's _detection_arm_bar().
         self.btn_arm = QPushButton("▶ ARM DETECTION")
         theme_manager.register_button(self.btn_arm, "green")
         self.btn_arm.clicked.connect(self._det_start)
-        btn_row.addWidget(self.btn_arm)
 
         self.btn_stop = QPushButton("⏹ STOP")
         theme_manager.register_button(self.btn_stop, "dim_red")
         self.btn_stop.clicked.connect(self._det_stop)
         self.btn_stop.setEnabled(False)
-        btn_row.addWidget(self.btn_stop)
 
         self.btn_estop = QPushButton("⚡ E-STOP")
         theme_manager.register_button(self.btn_estop, "estop")
         self.btn_estop.clicked.connect(self._det_estop)
-        btn_row.addWidget(self.btn_estop)
-        lay.addLayout(btn_row)
 
         status_grp = QGroupBox("Status")
         sg = QVBoxLayout(status_grp)
