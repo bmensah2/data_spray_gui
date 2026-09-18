@@ -34,15 +34,23 @@ Deliberately scoped for this first pass -- ported the essential
 camera → detection → zone → geometry-timed nozzle-fire pipeline
 and E-STOP safety path, and left out for a later pass (none of which
 block validating that pipeline on real hardware):
-  - Session metadata dialog / provenance capture / session report
-    writing (research-logging polish)
   - Manual pump prime/purge controls
   - Elaborate stats/event history tables (simple status labels used
     instead)
+
+UPDATE (Group C pass): session metadata dialog, provenance capture
+and session report writing are now implemented -- see _det_start()'s
+SessionMetadataDialog prompt, _capture_triple_provenance() below, and
+_write_session_report(), which reuses core/gui_session_report.py's
+build_session_report()/write_session_report() directly (pure data
+assembly, zero camera-count dependency, so nothing needed adapting
+there at all).
 """
 
 import time
 import logging
+import datetime
+from pathlib import Path
 
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGroupBox, QLabel, QPushButton,
@@ -84,6 +92,66 @@ try:
     ROS_BRIDGE_AVAILABLE = True
 except ImportError:
     ROS_BRIDGE_AVAILABLE = False
+
+try:
+    from core.triple_emeet_camera import CAM1_DEVICE, CAM2_DEVICE, CAM3_DEVICE
+except ImportError:
+    from core.triple_emeet_camera import CAM1_DEVICE, CAM2_DEVICE, CAM3_DEVICE
+
+from core.session_provenance import (
+    capture_software_versions, capture_model_info, capture_model_classes,
+    capture_geometry, capture_camera_settings,
+)
+from datetime import datetime as _datetime
+
+
+def _capture_triple_provenance(cfg, engine=None, cam1_device=None,
+                               cam2_device=None, cam3_device=None) -> dict:
+    """
+    Triple-camera equivalent of core/session_provenance.py's
+    capture_full_provenance() -- that function hardcodes exactly a
+    left/right pair (cams["left"]/cams["right"]), so a 3-camera
+    session reuses its own already camera-count-agnostic building
+    blocks (software/model/model_classes/geometry/per-camera settings)
+    directly rather than shoehorning 3 devices into 2 named slots or
+    leaving one camera's settings uncaptured entirely. Same
+    best-effort contract as the original: each section degrades
+    independently (a missing v4l2-ctl or git binary never prevents
+    arming), and this whole call is itself wrapped in a try/except by
+    its caller (_det_start()).
+    """
+    prov = {
+        "captured_at":   _datetime.now().isoformat(timespec="seconds"),
+        "software":      capture_software_versions(),
+        "model":         capture_model_info(cfg),
+        "model_classes": capture_model_classes(engine),
+        "geometry":      capture_geometry(cfg),
+    }
+
+    cams = {}
+    if cam1_device:
+        cams["cam1"] = capture_camera_settings(cam1_device)
+    if cam2_device:
+        cams["cam2"] = capture_camera_settings(cam2_device)
+    if cam3_device:
+        cams["cam3"] = capture_camera_settings(cam3_device)
+    prov["cameras"] = cams
+
+    try:
+        prov["session"] = {
+            "operator":     cfg.session.operator,
+            "researcher":   cfg.session.researcher,
+            "institution":  cfg.session.institution,
+            "field_id":     cfg.session.field_id,
+            "location":     cfg.session.location,
+            "crop":         cfg.session.crop,
+            "growth_stage": cfg.session.growth_stage.value,
+            "notes":        cfg.session.notes,
+        }
+    except Exception as e:
+        prov["session"] = {"error": str(e)}
+
+    return prov
 
 
 # A minimal ZoneDecision-shaped object -- ActuationController.actuate()
@@ -145,6 +213,16 @@ class DetectionPanelTriple(QWidget):
         self._fps      = 0.0
         self._last_t    = 0.0
         self._events    = 0
+        # Session metadata/provenance/report state -- see
+        # _det_start()'s SessionMetadataDialog prompt and
+        # _write_session_report(), reusing core/gui_session_report.py
+        # directly (pure data assembly, zero camera-count dependency).
+        self._session_meta   = None
+        self._provenance     = None
+        self._session_id     = None
+        self._session_start  = None
+        self._events_history = []
+        self._last_report_path = None
         # Forces a simulated nonzero speed so DistanceBufferedZone can
         # trigger without the robot actually driving -- essential for
         # bench-testing camera/nozzle alignment with the robot
@@ -250,6 +328,22 @@ class DetectionPanelTriple(QWidget):
     def _det_start(self):
         if self._armed:
             return
+
+        # Prompt for session provenance BEFORE arming anything, so
+        # Cancel is a genuine "don't arm", not a half-armed state --
+        # same principle as the 2-camera system's own _det_start().
+        # SessionMetadataDialog itself needed zero changes: it only
+        # takes a detection_mode string, no camera-count dependency.
+        from gui.session_metadata_dialog import SessionMetadataDialog
+        from PyQt5.QtWidgets import QDialog as _QDialog
+
+        meta_dlg = SessionMetadataDialog(parent=self, detection_mode="weed")
+        if meta_dlg.exec_() != _QDialog.Accepted:
+            self.shared_log.log(
+                "DETECT", "Arm cancelled — no session started", "info")
+            return
+        self._session_meta = meta_dlg.metadata()
+
         self._armed = True
 
         # RGBConfig -- required purely for ActuationController
@@ -260,8 +354,64 @@ class DetectionPanelTriple(QWidget):
         self._cfg = get_weed_config(field_id="triple_gui_run")
         self._zone_cfg = TripleZoneConfig()
 
+        m = self._session_meta
+        self._cfg.session.operator    = m["operator"]    or self._cfg.session.operator
+        self._cfg.session.researcher  = m["researcher"]  or self._cfg.session.researcher
+        self._cfg.session.institution = m["institution"] or self._cfg.session.institution
+        self._cfg.session.field_id    = m["field_id"]    or self._cfg.session.field_id
+        self._cfg.session.location    = m["location"]    or self._cfg.session.location
+        self._cfg.session.crop        = m["crop"]        or self._cfg.session.crop
+        self._cfg.session.notes       = m["notes"]
+        try:
+            from core.detection_config_rgb import GrowthStage
+            self._cfg.session.growth_stage = GrowthStage(m["growth_stage"])
+        except Exception:
+            pass   # keep the config default if unrecognized
+
         self._engine = TripleDetectionEngine(self._cfg)
         self._zones  = ZoneManagerTriple(self._zone_cfg)
+
+        # Provenance -- captured now that the engine is loaded (its
+        # class list is authoritative). Own small triple-camera
+        # helper rather than core/session_provenance.py's
+        # capture_full_provenance() directly: that function hardcodes
+        # exactly a left/right pair (cams["left"]/cams["right"]), so a
+        # 3-camera call reuses its own per-camera/software/model/
+        # geometry building blocks (each already camera-count-
+        # agnostic) instead of shoehorning 3 devices into 2 named
+        # slots or leaving one camera's settings uncaptured. Same
+        # best-effort contract: each section degrades independently,
+        # never blocks arming.
+        try:
+            self._provenance = _capture_triple_provenance(
+                self._cfg, engine=self._engine,
+                cam1_device=CAM1_DEVICE, cam2_device=CAM2_DEVICE,
+                cam3_device=CAM3_DEVICE)
+        except Exception as e:
+            logging.warning(f"provenance capture failed: {e}")
+            self._provenance = {"error": str(e)}
+
+        session_name = (self._session_meta or {}).get("session_name", "").strip()
+        if session_name:
+            import re as _re
+            safe_name = _re.sub(r"[^A-Za-z0-9_-]+", "_", session_name).strip("_")
+        else:
+            safe_name = ""
+        if safe_name:
+            session_id = safe_name
+            sessions_root = self._cfg.logging.base_dir / "sessions"
+            if (sessions_root / session_id).exists():
+                n = 2
+                while (sessions_root / f"{safe_name}_{n}").exists():
+                    n += 1
+                session_id = f"{safe_name}_{n}"
+        else:
+            session_id = (
+                f"triple_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}"
+                f"_{self._cfg.session.detection_mode.value}")
+        self._session_id     = session_id
+        self._session_start  = time.time()
+        self._events_history = []
 
         if ROS_BRIDGE_AVAILABLE:
             try:
@@ -336,6 +486,18 @@ class DetectionPanelTriple(QWidget):
             z.reset()
         self._prev_spray = [False, False, False]
 
+        # Write the full session report (events + provenance) before
+        # clearing engine/zones state. Wrapped so a report failure can
+        # never prevent a clean disarm -- stopping detection safely
+        # matters more than producing a document, same principle as
+        # the 2-camera system's own _det_stop().
+        try:
+            self._write_session_report()
+        except Exception as e:
+            self.shared_log.log(
+                "DETECT", f"⚠ Session report failed: {e}", "error")
+            logging.error(f"session report failed: {e}", exc_info=True)
+
         self._engine = None
         self._zones  = None
         self.lbl_armed.setText("Not armed")
@@ -351,6 +513,62 @@ class DetectionPanelTriple(QWidget):
             lb.setText(f"N{i+1}: --")
         self.shared_log.log("DETECT", "Detection stopped", "info")
         self.armed_changed.emit(False)
+
+    def _write_session_report(self):
+        """
+        Build and write the full session report (spray events +
+        provenance) for the session that just ended. Reads
+        self._events_history, the same list _on_spray_event() has
+        been appending real SprayEvent objects to all session long,
+        so the report can never disagree with what the operator saw
+        on screen (the Nozzles status labels, the spray-events
+        counter).
+
+        Reuses core/gui_session_report.py's build_session_report()/
+        write_session_report() completely unchanged -- pure data
+        assembly (session_id, events, provenance, session_meta,
+        timestamps in, a report dict out), zero camera-count
+        dependency, so nothing needed adapting here at all.
+        """
+        if not self._session_id:
+            return   # never armed, or already written
+
+        from core.gui_session_report import (
+            build_session_report, write_session_report)
+
+        report = build_session_report(
+            session_id   = self._session_id,
+            events       = self._events_history,
+            provenance   = self._provenance,
+            session_meta = self._session_meta,
+            started_at   = self._session_start,
+            ended_at     = time.time(),
+        )
+
+        out_dir = Path("logs/sessions") / self._session_id
+        try:
+            if self._cfg is not None:
+                out_dir = (Path(self._cfg.logging.base_dir) / "sessions"
+                          / self._session_id)
+        except Exception:
+            pass
+        out_path = out_dir / f"{self._session_id}_report.json"
+
+        if write_session_report(out_path, report):
+            n = report["statistics"].get("total_events", 0)
+            self._last_report_path = out_path
+            self.shared_log.log(
+                "DETECT",
+                f"Session report written — {n} event(s) → {out_path.name}",
+                "ok")
+            for w in report.get("warnings", []):
+                self.shared_log.log("DETECT", f"⚠ {w}", "warn")
+
+        # A session is only ever reported once -- clear the id so a
+        # later _det_stop() (there isn't one without a prior
+        # _det_start(), but this guards a double-call safely) doesn't
+        # re-write over the same file.
+        self._session_id = None
 
     def _det_estop(self, reason: str = "Operator pressed E-STOP"):
         """
@@ -443,6 +661,7 @@ class DetectionPanelTriple(QWidget):
 
     def _on_spray_event(self, event):
         self._events += 1
+        self._events_history.append(event)
         self.lbl_events.setText(f"Spray events: {self._events}")
 
     # ── Core inference loop ───────────────────────────────────
