@@ -202,6 +202,19 @@ class MainWindow(QMainWindow):
         toolbar.addWidget(self.lbl_arduino_status)
         outer.addLayout(toolbar)
 
+        # ── Row 2: Detection Arm/Stop/E-Stop bar + AUX (Light/Motor
+        # PSU), both moved up here from the Live Operation tab's
+        # 420px-wide left column -- both need to stay visible
+        # regardless of which sub-tab is active (Data Collection /
+        # Detection / Navigation), and the Arm/Stop/E-Stop bar was
+        # genuinely too cramped squeezed into that narrow column
+        # (button text was truncating). Full window width fixes both
+        # problems at once. ──
+        row2 = QHBoxLayout()
+        row2.addWidget(self._detection_arm_bar(), stretch=1)
+        row2.addWidget(self.gantry._aux_group())
+        outer.addLayout(row2)
+
         # ── Main area: "Live Operation" (controls + camera view) and
         # "Session Analysis" (full-width, needs the room for its
         # wide event-feed table) as top-level tabs, rather than
@@ -221,41 +234,22 @@ class MainWindow(QMainWindow):
         left_tabs = QTabWidget()
         left_tabs.addTab(self.capture, "💾 Data Collection")
 
-        # Detection sub-tab: an always-visible Arm/Stop/E-Stop bar
-        # above inner Spray | Detect sub-tabs -- matches
-        # main_gui_rgb.py's DetectionTab exactly (its own
-        # _detection_arm_bar() sits above the same Spray/Detect pair
-        # for the same reason: the bar must stay visible regardless
-        # of which inner sub-tab is selected).
-        detection_w = QWidget()
-        detection_lay = QVBoxLayout(detection_w)
-        detection_lay.setContentsMargins(0, 0, 0, 0)
-        detection_lay.setSpacing(0)
-        detection_lay.addWidget(self._detection_arm_bar())
-        detection_lay.addWidget(_divider())
-
+        # Detection sub-tab: inner Spray | Detect sub-tabs. The Arm/
+        # Stop/E-Stop bar itself no longer lives here -- moved to the
+        # top-level header (see _build_ui()'s new Row 2) so it's
+        # visible regardless of which top-level sub-tab is active,
+        # not just while "Detection" happens to be selected, and has
+        # the full window width to work with instead of being
+        # squeezed into this 420px column.
         detection_tabs = QTabWidget()
         detection_tabs.addTab(self.spray,  "💉 Spray")
         detection_tabs.addTab(self.detect, "🎯 Detect")
-        detection_lay.addWidget(detection_tabs)
-        left_tabs.addTab(detection_w, "🎯 Detection")
+        left_tabs.addTab(detection_tabs, "🎯 Detection")
 
-        # Navigation sub-tab: AUX (Light / Motor PSU) controls above
-        # the navigation panel itself. main_gui_rgb.py never visually
-        # embeds GantryPanel at all (confirmed: self.gantry there is
-        # constructed purely for .ctrl, never added to a layout), but
-        # AUX specifically was asked to stay visible here -- reuses
-        # GantryPanel._aux_group() directly (a standalone QGroupBox
-        # built from self.gantry.ctrl, no dependency on any other
-        # GantryPanel group having been built first) rather than
-        # embedding the whole panel just for this one group.
-        nav_w = QWidget()
-        nav_lay = QVBoxLayout(nav_w)
-        nav_lay.setContentsMargins(0, 0, 0, 0)
-        nav_lay.setSpacing(0)
-        nav_lay.addWidget(self.gantry._aux_group())
-        nav_lay.addWidget(self.nav, stretch=1)
-        left_tabs.addTab(nav_w, "🧭 Navigation")
+        # Navigation sub-tab -- AUX (Light / Motor PSU) no longer
+        # lives here either, moved to the top-level header for the
+        # same always-visible reason (see _build_ui()'s new Row 2).
+        left_tabs.addTab(self.nav, "🧭 Navigation")
 
         left_lay.addWidget(left_tabs)
 
