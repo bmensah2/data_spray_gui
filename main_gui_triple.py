@@ -65,6 +65,14 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("ABEN — Triple RGB Imaging & Spraying (Standalone)")
+        # Matches main_gui_rgb.py's own setMinimumSize()+resize() pair
+        # (that app: 1400x820 minimum, 1600x900 default) -- sized
+        # somewhat larger here since this app's top toolbar row packs
+        # in more controls (Arduino connect, Camera Settings, Start
+        # Cameras, View+Fullscreen, the Arm/Stop/E-Stop bar, and AUX
+        # Light+Motor PSU, all in that one row) and needs more width
+        # to lay out without wrapping/overflowing.
+        self.setMinimumSize(1600, 900)
         self.resize(1700, 1000)
 
         self._sys_log = UnifiedLog()
