@@ -192,6 +192,16 @@ class MainWindow(QMainWindow):
         # sub-tab (Data Collection / Detection / Navigation) is active.
         toolbar.addWidget(self.camera.camera_control_bar())
 
+        # Detection Arm/Stop/E-Stop bar + AUX (Light/Motor PSU) --
+        # all in this SAME toolbar row, right after View/Fullscreen,
+        # not a separate row below. Both need to stay visible
+        # regardless of which sub-tab is active, and the Arm/Stop/
+        # E-Stop bar was genuinely too cramped squeezed into the
+        # 420px-wide left column (button text was truncating) --
+        # the full toolbar row fixes both at once.
+        toolbar.addWidget(self._detection_arm_bar())
+        toolbar.addWidget(self.gantry._aux_group())
+
         toolbar.addStretch()
 
         self.lbl_arduino_status = QLabel("Arduino: disconnected")
@@ -201,19 +211,6 @@ class MainWindow(QMainWindow):
                 f"font-family:'Noto Sans',Arial,sans-serif;"))
         toolbar.addWidget(self.lbl_arduino_status)
         outer.addLayout(toolbar)
-
-        # ── Row 2: Detection Arm/Stop/E-Stop bar + AUX (Light/Motor
-        # PSU), both moved up here from the Live Operation tab's
-        # 420px-wide left column -- both need to stay visible
-        # regardless of which sub-tab is active (Data Collection /
-        # Detection / Navigation), and the Arm/Stop/E-Stop bar was
-        # genuinely too cramped squeezed into that narrow column
-        # (button text was truncating). Full window width fixes both
-        # problems at once. ──
-        row2 = QHBoxLayout()
-        row2.addWidget(self._detection_arm_bar(), stretch=1)
-        row2.addWidget(self.gantry._aux_group())
-        outer.addLayout(row2)
 
         # ── Main area: "Live Operation" (controls + camera view) and
         # "Session Analysis" (full-width, needs the room for its
