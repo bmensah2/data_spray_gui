@@ -289,52 +289,55 @@ class MainWindow(QMainWindow):
 
     def _detection_arm_bar(self) -> QWidget:
         """
-        Always-visible ARM/STOP/E-STOP bar above the Detection
-        sub-tab's Spray | Detect inner tabs -- matches
-        main_gui_rgb.py's DetectionTab._detection_arm_bar(), which
-        exists for exactly this reason: so the bar doesn't disappear
-        depending on which inner sub-tab is selected. Calls
+        Always-visible ARM/STOP/E-STOP bar in the top toolbar --
+        matches main_gui_rgb.py's DetectionTab._detection_arm_bar(),
+        which exists for exactly this reason: so the bar doesn't
+        disappear depending on which sub-tab is selected. Calls
         self.detect's private _det_start()/_det_stop()/_det_estop()
         directly (DetectionPanelTriple's own btn_arm/btn_stop/
         btn_estop are still constructed there for internal state
         tracking, just no longer added to its own visible layout --
         see detection_panel_triple.py's _build_ui() comment).
+
+        Trimmed down from an earlier version that had its own "DETECTION:"
+        label plus a dedicated LED + ARMED/DISARMED text label:
+        crammed into the single toolbar row alongside Arduino connect,
+        Camera Settings, Start Cameras, View/Fullscreen, and AUX, that
+        earlier version was genuinely too wide and button text was
+        visibly truncating ("ARM", "E-STO"). The LED+status text was
+        also pure duplication -- _header_status()'s own DETECT LED
+        already tracks this exact armed state one row up. Dropping it
+        removes both the duplication and its own internal addStretch(),
+        freeing real width for the buttons themselves.
         """
         w = QWidget()
         theme_manager.register_widget(w, lambda p: f"background-color:{p['bg0']};")
         lay = QHBoxLayout(w)
-        lay.setContentsMargins(8, 6, 8, 6)
-        lay.setSpacing(8)
+        lay.setContentsMargins(4, 6, 4, 6)
+        lay.setSpacing(4)
 
-        lay.addWidget(_muted("DETECTION:"))
-
-        self.btn_arm_start = QPushButton("▶  ARM DETECTION")
+        self.btn_arm_start = QPushButton("▶ ARM")
         theme_manager.register_button(self.btn_arm_start, "green")
         self.btn_arm_start.setMinimumHeight(32)
-        self.btn_arm_start.setMinimumWidth(160)
+        self.btn_arm_start.setMinimumWidth(70)
+        self.btn_arm_start.setToolTip("Arm Detection")
         self.btn_arm_start.clicked.connect(self._on_arm)
         lay.addWidget(self.btn_arm_start)
 
-        self.btn_arm_stop = QPushButton("⏹  STOP")
+        self.btn_arm_stop = QPushButton("⏹ STOP")
         theme_manager.register_button(self.btn_arm_stop, "dim_red")
         self.btn_arm_stop.setMinimumHeight(32)
+        self.btn_arm_stop.setMinimumWidth(70)
         self.btn_arm_stop.setEnabled(False)
         self.btn_arm_stop.clicked.connect(self._on_stop)
         lay.addWidget(self.btn_arm_stop)
 
-        self.btn_arm_estop = QPushButton("⚡  E-STOP")
+        self.btn_arm_estop = QPushButton("⚡ E-STOP")
         theme_manager.register_button(self.btn_arm_estop, "estop")
         self.btn_arm_estop.setMinimumHeight(32)
-        self.btn_arm_estop.setMinimumWidth(100)
+        self.btn_arm_estop.setMinimumWidth(80)
         self.btn_arm_estop.clicked.connect(self._on_estop)
         lay.addWidget(self.btn_arm_estop)
-
-        lay.addStretch()
-
-        self.arm_led = LED(14)
-        lay.addWidget(self.arm_led)
-        self.arm_status = _muted("DISARMED")
-        lay.addWidget(self.arm_status)
 
         # Sync to whatever the real armed state already is (in case
         # this bar is ever rebuilt after detection was already armed)
@@ -351,12 +354,6 @@ class MainWindow(QMainWindow):
         self.btn_arm_stop.setEnabled(armed)
         theme_manager.register_button(
             self.btn_arm_stop, "red" if armed else "dim_red")
-        self.arm_led.set_state(armed, role="amber")
-        self.arm_status.setText("ARMED" if armed else "DISARMED")
-        theme_manager.register_widget(
-            self.arm_status, lambda p, _armed=armed: (
-                f"color:{p['amber'] if _armed else p['muted']};"
-                f"font-size:10px;font-family:'Noto Sans',Arial,sans-serif;"))
 
     def _on_arm(self):
         self.detect._det_start()
