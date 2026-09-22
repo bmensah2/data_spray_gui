@@ -50,7 +50,7 @@ from PyQt5.QtCore import QTimer
 from gui.theme_manager import theme_manager
 from gui.shared_log import UnifiedLog
 from gui.style import LED, _muted, _divider
-from gui.panels.gantry_panel import GantryPanel, LightWidget, MotorPsuWidget
+from gui.panels.gantry_panel import GantryPanel, LightWidget
 from gui.panels.triple_camera_panel import TripleCameraPanel
 from gui.panels.detection_panel_triple import DetectionPanelTriple
 from gui.panels.triple_capture_panel import TripleCapturePanel
@@ -209,26 +209,28 @@ class MainWindow(QMainWindow):
         # the full toolbar row fixes both at once.
         toolbar.addWidget(self._detection_arm_bar())
 
-        # AUX -- Light + Motor PSU side by side, matching the rest of
-        # this toolbar's compact horizontal style. Deliberately NOT
-        # GantryPanel._aux_group(): that wraps both in a QGroupBox
-        # with a QVBoxLayout (one stacked ON TOP of the other, plus a
-        # caption line), which reads as "vertical" the moment it's
-        # dropped into a horizontal toolbar row -- not what was asked
-        # for. LightWidget and MotorPsuWidget are each ALREADY a
-        # single self-contained horizontal row internally (LED+label+
-        # ON+OFF, see gantry_panel.py) -- constructing them directly
-        # from self.gantry.ctrl and placing them as two ordinary
-        # toolbar widgets, side by side, gets genuinely horizontal
-        # placement with no GantryPanel changes needed.
+        # AUX -- Light only. Deliberately NOT GantryPanel._aux_group():
+        # that wraps controls in a QGroupBox with a QVBoxLayout (one
+        # stacked ON TOP of the other, plus a caption line), which
+        # reads as "vertical" the moment it's dropped into a
+        # horizontal toolbar row -- not what was asked for. LightWidget
+        # is ALREADY a single self-contained horizontal row internally
+        # (LED+label+ON+OFF, see gantry_panel.py) -- constructing it
+        # directly from self.gantry.ctrl and placing it as an ordinary
+        # toolbar widget gets genuinely horizontal placement with no
+        # GantryPanel changes needed.
+        #
+        # Motor PSU's own ON/OFF toggle is deliberately NOT included
+        # here -- the operator wants it left always on (that's fine
+        # physically) and asked for the control itself to be dropped
+        # from this already-crowded toolbar row rather than trimmed
+        # further. self.gantry.ctrl itself is untouched by this: any
+        # other code path that needs to send "mpsu on/off" still can,
+        # this only removes the toolbar's own toggle for it.
         self.aux_light = LightWidget(self.gantry.ctrl)
         toolbar.addWidget(self.aux_light)
-        self.aux_motor_psu = MotorPsuWidget(self.gantry.ctrl)
-        toolbar.addWidget(self.aux_motor_psu)
         self.gantry.state_signal.connect(
             lambda s: self.aux_light.update_state(s.light_on))
-        self.gantry.state_signal.connect(
-            lambda s: self.aux_motor_psu.update_state(s.motor_psu_on))
 
         toolbar.addStretch()
 
