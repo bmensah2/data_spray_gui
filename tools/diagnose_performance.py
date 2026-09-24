@@ -44,6 +44,16 @@ and the rest still proceeds:
    whichever is really in use) and times several real forward passes,
    separate from and after the capture test, so capture-side and
    inference-side timing are never conflated.
+5. COMBINED LOAD TEST — capture AND real inference running together
+   in the same loop, the same sequence the live app actually follows
+   (read a frame, run detection on it, move to the next), for the
+   same duration as section 3's isolated test. This is what section 3
+   alone can't show: whether drops only appear once something CPU-
+   bound (inference) is genuinely competing with the capture threads,
+   not just sharing USB bandwidth. Directly compared against section
+   3's numbers afterward -- if drops stay low even under combined
+   load, that's evidence AGAINST a systemic bottleneck and points
+   toward an intermittent, camera-specific hardware issue instead.
 
 Prints a plain-language summary at the end pointing at what the
 numbers actually suggest, not just raw output.
@@ -144,13 +154,45 @@ def check_usb_topology():
           "controllers and this isn't a shared-bandwidth issue.")
 
 
+def _print_capture_report(frame_counts, drop_counts, elapsed, label):
+    print(f"\nElapsed: {elapsed:.1f}s")
+    for i in range(3):
+        fps = frame_counts[i] / elapsed if elapsed > 0 else 0
+        print(f"  Cam {i+1}: {frame_counts[i]} frames delivered "
+              f"(~{fps:.1f} fps) | drop_count={drop_counts[i]}")
+
+    max_drops = max(drop_counts)
+    min_drops = min(drop_counts)
+    if max_drops > 0 and max_drops > min_drops * 3 and max_drops > 20:
+        worst = drop_counts.index(max_drops) + 1
+        print(f"\n→ [{label}] Drops are heavily concentrated on Cam "
+              f"{worst} ({max_drops} vs the others' {min_drops}-ish) -- "
+              f"this points at THAT camera's specific USB connection "
+              f"(cable/port/power), not a shared software bottleneck.")
+    elif max_drops > 20:
+        print(f"\n→ [{label}] Drops are roughly even across all three "
+              f"cameras -- more consistent with a SHARED bottleneck "
+              f"(USB bandwidth if they're on one hub — see section 2 — "
+              f"or CPU contention).")
+    else:
+        print(f"\n→ [{label}] Drop counts are low across the board.")
+
+
 def run_capture_test(duration_s: float):
-    _section(f"3. PER-CAMERA CAPTURE TEST ({duration_s:.0f}s, real hardware)")
+    """
+    Capture ONLY -- no inference running. Establishes the baseline:
+    does the pure capture pipeline itself drop frames when nothing
+    else is competing for CPU/USB? Returns (frame_counts, drop_counts,
+    elapsed) so main() can compare this baseline directly against
+    run_combined_load_test()'s numbers, in the same run.
+    """
+    _section(f"3. PER-CAMERA CAPTURE TEST, ISOLATED ({duration_s:.0f}s, "
+             f"real hardware, no inference running)")
     try:
         from core.triple_emeet_camera import TripleEMEETCamera
     except ImportError as e:
         print(f"Could not import TripleEMEETCamera: {e}")
-        return
+        return None
 
     try:
         cam = TripleEMEETCamera()
@@ -158,7 +200,7 @@ def run_capture_test(duration_s: float):
         print(f"Could not open cameras: {e}")
         print("(Check they're connected and not held open by another "
               "process -- e.g. main_gui_triple.py already running.)")
-        return
+        return None
 
     try:
         cam.start()
@@ -176,38 +218,131 @@ def run_capture_test(duration_s: float):
                         frame_counts[i] += 1
             time.sleep(0.01)
         elapsed = time.time() - t_start
-
-        status = cam.get_status()
-        print(f"\nElapsed: {elapsed:.1f}s")
-        for i in range(3):
-            fps = frame_counts[i] / elapsed if elapsed > 0 else 0
-            print(f"  Cam {i+1}: {frame_counts[i]} frames delivered "
-                  f"(~{fps:.1f} fps) | drop_count={status['drop_counts'][i]}")
-
-        max_drops = max(status['drop_counts'])
-        min_drops = min(status['drop_counts'])
-        if max_drops > 0 and max_drops > min_drops * 3 and max_drops > 20:
-            worst = status['drop_counts'].index(max_drops) + 1
-            print(f"\n→ Drops are heavily concentrated on Cam {worst} "
-                  f"({max_drops} vs the others' {min_drops}-ish) -- this "
-                  f"points at THAT camera's specific USB connection "
-                  f"(cable/port/power), not a shared software bottleneck. "
-                  f"A DeepStream/TensorRT rewrite would not fix a single "
-                  f"camera's flaky physical connection.")
-        elif max_drops > 20:
-            print(f"\n→ Drops are roughly even across all three cameras -- "
-                  f"more consistent with a SHARED bottleneck (USB "
-                  f"bandwidth if they're on one hub — see section 2 — "
-                  f"or CPU contention from the capture threads "
-                  f"themselves).")
-        else:
-            print(f"\n→ Drop counts are low across the board -- capture "
-                  f"itself doesn't look like the bottleneck right now. "
-                  f"If frame drops are still visible in the live app, "
-                  f"the gap is more likely downstream (inference timing, "
-                  f"or GUI-thread display work) -- see section 4.")
+        drop_counts = list(cam.get_status()['drop_counts'])
+        _print_capture_report(frame_counts, drop_counts, elapsed,
+                              "isolated capture")
+        if max(drop_counts) <= 20:
+            print("If frame drops are still visible in the live app, "
+                  "the gap may only show up under real combined load -- "
+                  "see section 5.")
+        return (frame_counts, drop_counts, elapsed)
     finally:
         cam.stop()
+
+
+def run_combined_load_test(duration_s: float):
+    """
+    Capture AND real inference running together, in the same loop --
+    reading a frame then immediately running detection on it before
+    moving to the next, the same sequence DetectionPanelTriple.
+    _run_inference() follows in the live app. This is what an
+    isolated capture-only test (section 3) can't reveal: whether
+    drops only appear once something else (CPU-bound inference) is
+    genuinely competing with the capture threads for the same cores,
+    not just sharing USB bandwidth.
+
+    Falls back to a clear "can't test this" message rather than a
+    misleading result if the model is in stub mode (no trained
+    weights) -- stub-mode inference is near-instant and wouldn't
+    reproduce real combined load at all.
+    """
+    _section(f"5. COMBINED LOAD TEST ({duration_s:.0f}s, capture + REAL "
+             f"inference running together, real hardware)")
+    try:
+        from core.triple_emeet_camera import TripleEMEETCamera
+        from core.detection_config_rgb import get_weed_config
+        from core.detection_engine_triple import TripleDetectionEngine
+    except ImportError as e:
+        print(f"Could not import required modules: {e}")
+        return None
+
+    cfg = get_weed_config()
+    engine = TripleDetectionEngine(cfg)
+    if engine.stub_mode:
+        print("Engine is in STUB MODE (no trained weights found) -- "
+              "skipping this test. Stub-mode inference is near-instant "
+              "and wouldn't reproduce real combined CPU load, so a "
+              "result here would be misleading rather than useful.")
+        return None
+
+    try:
+        cam = TripleEMEETCamera()
+    except Exception as e:
+        print(f"Could not open cameras: {e}")
+        return None
+
+    try:
+        cam.start()
+        print("Capturing + running REAL inference on every frame "
+              "(same sequence the live app follows)...")
+        frame_counts = [0, 0, 0]
+        cycle_times_ms = []
+        t_start = time.time()
+        last_frame_id = -1
+        while time.time() - t_start < duration_s:
+            triple = cam.read_triple()
+            if triple is not None and triple.frame_id != last_frame_id:
+                last_frame_id = triple.frame_id
+                t0 = time.time()
+                engine.run_triple(triple)
+                cycle_times_ms.append((time.time() - t0) * 1000)
+                for i, f in enumerate(triple.frames):
+                    if f is not None:
+                        frame_counts[i] += 1
+            time.sleep(0.001)
+        elapsed = time.time() - t_start
+        drop_counts = list(cam.get_status()['drop_counts'])
+        _print_capture_report(frame_counts, drop_counts, elapsed,
+                              "combined load")
+        if cycle_times_ms:
+            mean_cycle = sum(cycle_times_ms) / len(cycle_times_ms)
+            print(f"\nMean capture-read-to-inference-done cycle: "
+                  f"{mean_cycle:.1f}ms "
+                  f"(~{1000/mean_cycle:.1f} fps ceiling under this load)")
+        return (frame_counts, drop_counts, elapsed)
+    finally:
+        cam.stop()
+
+
+def compare_baseline_vs_combined(baseline, combined):
+    _section("BASELINE vs COMBINED LOAD -- direct comparison")
+    if baseline is None or combined is None:
+        print("Can't compare -- one or both tests didn't run "
+              "(see sections 3 and 5 above for why).")
+        return
+
+    _, base_drops, base_elapsed = baseline
+    _, comb_drops, comb_elapsed = combined
+
+    print(f"{'Camera':<10}{'Isolated drops':<18}{'Combined-load drops':<22}{'Change'}")
+    any_worse = False
+    for i in range(3):
+        change = comb_drops[i] - base_drops[i]
+        if change > 5:
+            any_worse = True
+        marker = f"+{change}" if change > 0 else str(change)
+        print(f"Cam {i+1:<6}{base_drops[i]:<18}{comb_drops[i]:<22}{marker}")
+
+    if any_worse:
+        print(f"\n→ Drops meaningfully increased once real inference "
+              f"was running alongside capture -- this points at CPU/"
+              f"scheduling contention between the capture threads and "
+              f"inference, not raw USB bandwidth (the isolated test "
+              f"already showed the bus itself handles all 3 streams "
+              f"fine). Worth checking CPU/core usage during real "
+              f"operation, and whether inference is pinned to specific "
+              f"cores that also service the capture threads.")
+    else:
+        print(f"\n→ Drop counts stayed low even under combined load -- "
+              f"this test didn't reproduce the drops you're seeing in "
+              f"real use. That points toward an intermittent, hardware-"
+              f"level connection issue on a specific camera (like the "
+              f"Cam 1 USB disconnect found earlier this session) rather "
+              f"than a systemic capture/inference bottleneck -- worth "
+              f"watching the app's own logs for which camera(s) "
+              f"specifically show drop/disconnect warnings during "
+              f"actual field use, and checking that camera's cable/"
+              f"connector/USB port physically.")
 
 
 def run_inference_benchmark():
@@ -268,24 +403,41 @@ def main():
         description="Diagnose triple-camera frame-drop/performance issues")
     parser.add_argument(
         "--duration", type=float, default=15.0,
-        help="Capture test duration in seconds (default: 15)")
+        help="Capture test duration in seconds, applied to both the "
+             "isolated capture test and the combined-load test "
+             "(default: 15)")
     parser.add_argument(
         "--skip-capture", action="store_true",
-        help="Skip the live capture test (e.g. if the main app is "
+        help="Skip both live capture tests (e.g. if the main app is "
              "already running and holding the cameras open)")
+    parser.add_argument(
+        "--skip-combined", action="store_true",
+        help="Skip only the combined capture+inference load test "
+             "(section 5), keeping the isolated capture test")
     args = parser.parse_args()
 
     print("ABEN Triple RGB — Performance Diagnostic")
     print("Run this with the main app CLOSED (it needs exclusive access "
-          "to the cameras for the capture test).")
+          "to the cameras for the capture tests).")
 
     check_model_format()
     check_usb_topology()
+
+    baseline = None
+    combined = None
     if not args.skip_capture:
-        run_capture_test(args.duration)
+        baseline = run_capture_test(args.duration)
     else:
-        print("\n(Skipping live capture test per --skip-capture)")
+        print("\n(Skipping isolated capture test per --skip-capture)")
+
     run_inference_benchmark()
+
+    if not args.skip_capture and not args.skip_combined:
+        combined = run_combined_load_test(args.duration)
+    else:
+        print("\n(Skipping combined load test)")
+
+    compare_baseline_vs_combined(baseline, combined)
 
     _section("SUMMARY")
     print("Review each section's '→' conclusion above. In short:")
