@@ -157,19 +157,53 @@ class MainWindow(QMainWindow):
         outer.addWidget(self._header_status())
 
         # ── Top toolbar: Arduino connect + Start Cameras ──
-        toolbar = QHBoxLayout()
+        # Every element in this row is explicitly setFixedHeight(32),
+        # so the row lines up cleanly instead of each widget using its
+        # own natural size hint (which is how an earlier pass here
+        # left "Camera Settings" visibly shorter than its neighbors).
+        #
+        # 32px, not 26px: main_gui_rgb.py's own equivalent buttons use
+        # setFixedHeight(26), and that number looked like the obvious
+        # one to copy here too -- but Qt's Fusion style, when a
+        # button's stylesheet declares min-height (as
+        # theme_manager.register_button()'s CSS does, min-height:24px),
+        # computes an effective minimum from actual content (this
+        # button's text/padding/font) during its style-polish pass
+        # that can exceed an explicit setFixedHeight(26) and win
+        # anyway -- confirmed directly: register_button()-styled
+        # buttons here kept settling at height 32 regardless of the
+        # 26 they were told, while hdr_btn_camera_settings's own
+        # custom, min-height-free stylesheet had no such conflict and
+        # honored 26 correctly. Rather than continuing to fight that
+        # per-button (which also proved inconsistent across widget
+        # types), 32 is the value confirmed to stick reliably for
+        # every element in this row -- QPushButton styled via
+        # register_button(), a custom-stylesheet QPushButton, and a
+        # plain QComboBox alike -- so the whole row targets that
+        # instead, including the Arm/Stop/E-Stop bar and AUX Light,
+        # which already used 32 for unrelated reasons.
+        toolbar_row = QWidget()
+        theme_manager.register_widget(
+            toolbar_row, lambda p: f"background-color:{p['bg0']};")
+        toolbar_row.setFixedHeight(52)
+        toolbar = QHBoxLayout(toolbar_row)
+        toolbar.setContentsMargins(10, 4, 10, 4)
+        toolbar.setSpacing(6)
         toolbar.addWidget(_muted("Arduino:"))
         self.hdr_port_combo = QComboBox()
         self.hdr_port_combo.setMinimumWidth(140)
+        self.hdr_port_combo.setFixedHeight(32)
         toolbar.addWidget(self.hdr_port_combo)
 
         refresh_btn = QPushButton("↻")
         refresh_btn.setFixedWidth(28)
+        refresh_btn.setFixedHeight(32)
         refresh_btn.clicked.connect(self._refresh_arduino_ports)
         toolbar.addWidget(refresh_btn)
 
         self.hdr_btn_connect = QPushButton("🔌 CONNECT ARDUINO")
         theme_manager.register_button(self.hdr_btn_connect, "blue")
+        self.hdr_btn_connect.setFixedHeight(32)
         self.hdr_btn_connect.clicked.connect(self._toggle_arduino)
         toolbar.addWidget(self.hdr_btn_connect)
 
@@ -183,13 +217,14 @@ class MainWindow(QMainWindow):
                 f"padding:4px 12px;font-family:'Noto Sans',Arial,sans-serif;"
                 f"font-size:10px;}}"
                 f"QPushButton:hover{{background:{p['btn_hover']};}}"))
-        self.hdr_btn_camera_settings.setFixedHeight(26)
+        self.hdr_btn_camera_settings.setFixedHeight(32)
         self.hdr_btn_camera_settings.clicked.connect(
             self._open_camera_settings_dialog)
         toolbar.addWidget(self.hdr_btn_camera_settings)
 
         self.hdr_btn_start_camera = QPushButton("▶  START CAMERAS")
         theme_manager.register_button(self.hdr_btn_start_camera, "green")
+        self.hdr_btn_start_camera.setFixedHeight(32)
         self.hdr_btn_start_camera.clicked.connect(self.camera.toggle_start_stop)
         self.camera._start_btns.append(self.hdr_btn_start_camera)
         toolbar.addWidget(self.hdr_btn_start_camera)
@@ -228,6 +263,7 @@ class MainWindow(QMainWindow):
         # other code path that needs to send "mpsu on/off" still can,
         # this only removes the toolbar's own toggle for it.
         self.aux_light = LightWidget(self.gantry.ctrl)
+        self.aux_light.setFixedHeight(32)   # match the rest of this row
         toolbar.addWidget(self.aux_light)
         self.gantry.state_signal.connect(
             lambda s: self.aux_light.update_state(s.light_on))
@@ -240,7 +276,7 @@ class MainWindow(QMainWindow):
                 f"color:{p['muted']};font-size:10px;"
                 f"font-family:'Noto Sans',Arial,sans-serif;"))
         toolbar.addWidget(self.lbl_arduino_status)
-        outer.addLayout(toolbar)
+        outer.addWidget(toolbar_row)
 
         # ── Main area: "Live Operation" (controls + camera view) and
         # "Session Analysis" (full-width, needs the room for its
