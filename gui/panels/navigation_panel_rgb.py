@@ -1503,9 +1503,27 @@ class NavigationPanelRGB(QWidget):
             return
 
         import time as _t
+        import re as _re
+        # Report filename: the session's own name (from the mission
+        # config, or whatever the operator called it) if present, else
+        # the Field ID, rather than the generic "ABEN_Session_Report"
+        # every report used to share -- same fix as AnalysisTabTriple/
+        # AnalysisTabRGB's own _on_generate_report(). Sanitized for
+        # filesystem safety (session names/field IDs are free-text,
+        # not validated for this use). canonical is already the
+        # in-memory dict just built above -- no need to re-read it
+        # from canonical_path on disk.
+        report_name = "ABEN_Session_Report"
+        candidate = (canonical.get("session_id") or
+                    canonical.get("metadata", {}).get("field_id"))
+        if candidate:
+            safe = _re.sub(r"[^A-Za-z0-9_-]+", "_", str(candidate)).strip("_")
+            if safe:
+                report_name = safe
+
         out_path = (
             Path(session_path).parent /
-            f"ABEN_Session_Report_{_t.strftime('%Y%m%d_%H%M%S')}.docx"
+            f"{report_name}_{_t.strftime('%Y%m%d_%H%M%S')}.docx"
         )
 
         cmd = [

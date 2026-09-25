@@ -380,7 +380,7 @@ class AnalysisTabTriple(QWidget):
         out to generate_gui_session_report.js has no camera-count
         dependency at all.
         """
-        import shutil, subprocess, threading
+        import shutil, subprocess, threading, json, re
         from PyQt5.QtCore import QMetaObject, Q_ARG, Qt as _Qt
 
         report_path = getattr(self.detect, "_last_report_path", None)
@@ -407,8 +407,32 @@ class AnalysisTabTriple(QWidget):
                 "error")
             return
 
+        # Report filename: the session's own name (whatever the
+        # operator called it in SessionMetadataDialog -- e.g.
+        # "Grand_Farm", not an auto-generated triple_TIMESTAMP_mode
+        # string, since a custom name IS the whole point of that
+        # field) if present, else the Field ID, rather than the
+        # generic "ABEN_Session_Report" every report used to share --
+        # operator request: a folder of reports named only by
+        # timestamp made them hard to tell apart at a glance.
+        # Sanitized for filesystem safety (session names/field IDs are
+        # free-text the operator typed, not validated for this use).
+        report_name = "ABEN_Session_Report"
+        try:
+            data = json.loads(Path(report_path).read_text())
+            candidate = (data.get("session_id") or
+                        data.get("metadata", {}).get("field_id"))
+            if candidate:
+                safe = re.sub(r"[^A-Za-z0-9_-]+", "_", str(candidate)).strip("_")
+                if safe:
+                    report_name = safe
+        except Exception:
+            pass  # keep the generic fallback -- a malformed/unreadable
+                  # session JSON at this point would already have been
+                  # caught by the Path(report_path).exists() check above
+
         out_path = (Path(report_path).parent /
-                   f"ABEN_Session_Report_"
+                   f"{report_name}_"
                    f"{time.strftime('%Y%m%d_%H%M%S')}.docx")
         cmd = ["node", str(script),
               "--session", str(report_path), "--out", str(out_path)]

@@ -577,7 +577,7 @@ class AnalysisTabRGB(QWidget):
         dialog on completion -- rather than inventing a second pattern
         for the same kind of operation.
         """
-        import shutil, subprocess, threading
+        import shutil, subprocess, threading, json, re
         from PyQt5.QtCore import QMetaObject, Q_ARG, Qt as _Qt
 
         report_path = getattr(self.detect, "_last_report_path", None)
@@ -605,8 +605,29 @@ class AnalysisTabRGB(QWidget):
                 "error")
             return
 
+        # Report filename: the session's own name (whatever the
+        # operator called it in the session metadata dialog) if
+        # present, else the Field ID, rather than the generic
+        # "ABEN_Session_Report" every report used to share -- same fix
+        # as AnalysisTabTriple's own _on_generate_report(), which this
+        # method was itself reused from nearly verbatim; matching it
+        # back here keeps the two consistent. Sanitized for filesystem
+        # safety (session names/field IDs are free-text the operator
+        # typed, not validated for this use).
+        report_name = "ABEN_Session_Report"
+        try:
+            data = json.loads(Path(report_path).read_text())
+            candidate = (data.get("session_id") or
+                        data.get("metadata", {}).get("field_id"))
+            if candidate:
+                safe = re.sub(r"[^A-Za-z0-9_-]+", "_", str(candidate)).strip("_")
+                if safe:
+                    report_name = safe
+        except Exception:
+            pass
+
         out_path = (Path(report_path).parent /
-                   f"ABEN_Session_Report_"
+                   f"{report_name}_"
                    f"{time.strftime('%Y%m%d_%H%M%S')}.docx")
         cmd = ["node", str(script),
                "--session", str(report_path), "--out", str(out_path)]
