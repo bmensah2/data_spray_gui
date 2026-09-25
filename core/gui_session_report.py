@@ -165,10 +165,19 @@ def build_session_report(session_id: str,
             warnings.append(
                 f"{side.upper()} camera settings unavailable "
                 f"({c.get('reason', 'unknown')}).")
-    if (provenance or {}).get("software", {}).get("git_dirty") is True:
-        warnings.append(
-            "Working tree had uncommitted changes — the running code does "
-            "not exactly match the recorded git commit.")
+    # Deliberately NOT appended to warnings here (operator request):
+    # this repo is under active development, so the working tree
+    # having uncommitted changes is the ordinary case, not an
+    # exceptional one worth a top-of-report warning banner every
+    # single time -- unlike the other five conditions in this
+    # function (no operator recorded, model file missing, stub mode,
+    # camera settings unavailable, zero spray events), which are each
+    # genuinely occasional and worth flagging when they happen. The
+    # reproducibility caveat itself isn't dropped: generate_gui_session_report.js
+    # still prints it once, right next to the git commit in the
+    # Software & Reproducibility section (sw.git_dirty), which is a
+    # more fitting place for a reproducibility-specific note than a
+    # general warnings banner duplicating the same point twice.
     if stats.get("total_events", 0) == 0:
         warnings.append("No spray events were recorded this session.")
     report["warnings"] = warnings
@@ -351,10 +360,17 @@ if __name__ == "__main__":
         "software": {"git_dirty": True},
     }, {})
     joined = " ".join(bad["warnings"])
-    for expect in ("operator", "stub", "camera", "uncommitted", "No spray"):
+    for expect in ("operator", "stub", "camera", "No spray"):
         assert expect.lower() in joined.lower(), f"missing warning: {expect}"
+    assert "uncommitted" not in joined.lower() and "dirty" not in joined.lower(), (
+        "git_dirty should NOT produce a warnings-array entry (operator "
+        "request: too noisy during active development) -- the "
+        "reproducibility caveat still appears exactly once, directly in "
+        "generate_gui_session_report.js next to the git commit itself, "
+        "not duplicated here")
     print(f"✓ All {len(bad['warnings'])} degradation warnings fire correctly "
-          f"(missing operator, stub mode, camera, dirty tree, no events)")
+          f"(missing operator, stub mode, camera, no events) -- and "
+          f"git_dirty=True correctly produces NO warnings-array entry")
 
     out = Path(tempfile.mkdtemp()) / "report.json"
     assert write_session_report(out, rep)
