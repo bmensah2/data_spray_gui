@@ -127,8 +127,27 @@ def capture_model_info(cfg) -> dict:
         m = cfg.model
         mode = getattr(cfg.session, "detection_mode", None)
         mode_val = getattr(mode, "value", str(mode))
-        path = (Path(m.cls_rgb_pt) if mode_val == "cls"
-                else Path(m.weed_rgb_pt))
+
+        # get_model_path(mode) -- NOT a hardcoded m.weed_rgb_pt/
+        # m.cls_rgb_pt reference -- so this reports whichever file
+        # will ACTUALLY be loaded (.engine when use_tensorrt=True and
+        # the file exists, matching get_model_path()'s own fallback
+        # rule exactly, .pt otherwise), not just always the .pt path
+        # regardless of what's really running. This was a genuine,
+        # pre-existing bug invisible until now: .engine never existed
+        # before this session's TensorRT work, so hardcoding .pt here
+        # was always "accidentally correct" (it happened to be the
+        # same file _load_model() was really loading too) -- confirmed
+        # on a real generated report showing model_path=weed_rgb.pt
+        # while the app's own log showed "Loading ...weed_rgb.engine
+        # for TensorRT inference..." at the very same session.
+        # mode itself may be None (detection_mode never set) --
+        # DetectionMode.WEED is the sensible default, matching this
+        # function's own prior behavior (its old ternary treated
+        # anything that wasn't literally "cls" as the weed case).
+        from core.detection_config_rgb import DetectionMode
+        path = m.get_model_path(
+            mode if isinstance(mode, DetectionMode) else DetectionMode.WEED)
 
         info["detection_mode"]        = mode_val
         info["model_path"]            = str(path)
