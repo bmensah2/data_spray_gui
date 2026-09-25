@@ -118,6 +118,24 @@ class ModelConfig:
     use_tensorrt:         bool  = True   # use .engine if available
     device:               str   = "cuda:0"
 
+    # ── YOLO architecture task type (detect/segment/classify/pose/
+    # obb) -- passed explicitly to YOLO(..., task=...) rather than
+    # left to ultralytics' own auto-detection. Confirmed necessary on
+    # real hardware: a .pt file carries enough embedded metadata for
+    # ultralytics to correctly auto-detect this, but a bare .engine
+    # file doesn't -- loading weed_rgb.engine (a real YOLO11n-SEG
+    # model) without this explicit task= made ultralytics wrongly
+    # guess "detect", logging "Unable to automatically guess model
+    # task, assuming 'task=detect'" and (likely) computing/discarding
+    # the segmentation mask output incorrectly rather than not at
+    # all, since that head is baked into the compiled engine
+    # regardless of which task ultralytics thinks it's running.
+    # weed_rgb is CONFIRMED segmentation; cls_rgb's architecture
+    # isn't confirmed, so it defaults to None (ultralytics' own
+    # auto-detect) rather than guessing.
+    weed_task: str           = "segment"
+    cls_task:  Optional[str] = None
+
     def get_model_path(self, mode: DetectionMode) -> Path:
         """Return the correct model path, falling back .engine → .pt."""
         if mode == DetectionMode.WEED:
@@ -130,6 +148,17 @@ class ModelConfig:
         if not p.exists():
             return fallback
         return p
+
+    def get_model_task(self, mode: DetectionMode) -> Optional[str]:
+        """
+        Return the explicit YOLO task type for this mode's model, or
+        None to let ultralytics auto-detect (its own default) --
+        which is exactly what silently went wrong for weed_rgb.engine
+        on real hardware. None here isn't "unset by oversight", it's
+        "we genuinely don't know cls_rgb's architecture yet, so don't
+        guess for it either -- only weed_rgb's task is confirmed."
+        """
+        return self.weed_task if mode == DetectionMode.WEED else self.cls_task
 
     def model_ready(self, mode: DetectionMode) -> bool:
         """Return True if any weights exist for this mode."""

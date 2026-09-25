@@ -235,7 +235,12 @@ class RGBDetectionEngine:
 
         try:
             logging.info(f"RGBDetectionEngine: loading {model_path} …")
-            self.model = YOLO(str(model_path))
+            # task=None (cls_rgb's case, architecture not confirmed)
+            # behaves identically to omitting the argument entirely --
+            # ultralytics' own auto-detect, unchanged from before this
+            # fix for any model where the explicit task isn't known.
+            self.model = YOLO(str(model_path),
+                              task=self.cfg.model.get_model_task(mode))
             # .to(device) is a PyTorch nn.Module method -- only valid
             # when the loaded weights ARE a .pt PyTorch model.
             # Exported formats (TensorRT .engine, ONNX, etc.) aren't
