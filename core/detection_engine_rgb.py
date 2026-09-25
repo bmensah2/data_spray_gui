@@ -236,7 +236,20 @@ class RGBDetectionEngine:
         try:
             logging.info(f"RGBDetectionEngine: loading {model_path} …")
             self.model = YOLO(str(model_path))
-            self.model.to(self.cfg.model.device)
+            # .to(device) is a PyTorch nn.Module method -- only valid
+            # when the loaded weights ARE a .pt PyTorch model.
+            # Exported formats (TensorRT .engine, ONNX, etc.) aren't
+            # movable/re-targetable like that: a TensorRT engine is
+            # already compiled for a specific device (this app's own
+            # tools/export_tensorrt.py already passes device= at
+            # export time), so there's nothing to .to() at load time,
+            # and calling it anyway raises exactly the error this
+            # fixes: "should be a *.pt PyTorch model to run this
+            # method". Confirmed on real hardware: this bug was
+            # latent and never exercised until a real .engine file
+            # first existed to load.
+            if model_path.suffix == ".pt":
+                self.model.to(self.cfg.model.device)
 
             # Override class names from model if available
             if hasattr(self.model, 'names') and self.model.names:
