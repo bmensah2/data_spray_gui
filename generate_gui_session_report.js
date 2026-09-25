@@ -321,6 +321,75 @@ if (mx) {
   children.push(divider());
 }
 
+// ── Session Telemetry (GUI ARM DETECTION sessions -- operator
+//    request: robot speed/distance, inference timing, device status.
+//    Mirrors the "Mission Kinematics & Performance" section above in
+//    style/structure, but reads report.session_telemetry (written by
+//    DetectionPanelTriple._write_session_report() at session end)
+//    rather than stats.mission_extras, a different report source
+//    (START MISSION) that doesn't apply to a GUI ARM DETECTION
+//    session at all. ──
+const tel = report.session_telemetry;
+if (tel) {
+  children.push(h1("Session Telemetry"));
+
+  const sd = tel.speed_distance || {};
+  children.push(h2("Robot"));
+  children.push(simpleTable(
+    ["Metric", "Value"],
+    [
+      ["Distance traveled", sd.total_distance_m != null ? `${fmt(sd.total_distance_m, 2)} m` : "—"],
+      ["Mean speed", sd.mean_speed_mps != null ? `${fmt(sd.mean_speed_mps, 3)} m/s` : "—"],
+      ["Max speed", sd.max_speed_mps != null ? `${fmt(sd.max_speed_mps, 3)} m/s` : "—"],
+      ["Speed samples", sd.sample_count ?? "—"],
+    ],
+    [4680, 4680],
+  ));
+  if (!sd.sample_count) {
+    children.push(p("No odometry was available during this session "
+      + "(Husky not connected, or a static test) -- distance/speed "
+      + "above reflect that, not a sensor failure.", { color: COLOR_WARN }));
+  }
+
+  const inf = tel.inference_ms || {};
+  if (inf.count > 0) {
+    children.push(h2("Inference Timing"));
+    children.push(simpleTable(
+      ["Metric", "Value"],
+      [
+        ["Frames processed (all cameras)", inf.count],
+        ["Mean inference time", `${fmt(inf.mean, 1)} ms`],
+        ["Min inference time", `${fmt(inf.min, 1)} ms`],
+        ["Max inference time", `${fmt(inf.max, 1)} ms`],
+      ],
+      [4680, 4680],
+    ));
+  }
+
+  const dev = tel.devices || {};
+  children.push(h2("Devices"));
+  if (dev.arduino_connected) {
+    children.push(simpleTable(
+      ["Metric", "Value"],
+      [
+        ["Arduino", "Connected"],
+        ["Firmware mode", dev.firmware_mode || "—"],
+        ["Homed", dev.homed ? "yes" : "no"],
+        ["Limit switch OK", dev.limit_ok ? "yes" : "no"],
+        ["Pump", dev.pump_on ? "ON" : "off"],
+        ["Nozzles (N1/N2/N3)", (dev.nozzles_on || []).map(n => n ? "ON" : "off").join(" / ") || "—"],
+        ["Light", dev.light_on ? "ON" : "off"],
+        ["Motor PSU", dev.motor_psu_on ? "ON" : "off"],
+      ],
+      [4680, 4680],
+    ));
+  } else {
+    children.push(p("Arduino was not connected at the end of this "
+      + "session -- actuation ran in DRY RUN mode.", { color: COLOR_WARN }));
+  }
+  children.push(divider());
+}
+
 children.push(h1("Camera Settings"));
 if (Object.keys(cams).length === 0) {
   children.push(p("No camera settings were captured for this session.", { color: COLOR_WARN }));
@@ -331,6 +400,8 @@ if (Object.keys(cams).length === 0) {
       camRows.push([side.toUpperCase(), "unavailable", c.reason || "unknown"]);
       continue;
     }
+    camRows.push([side.toUpperCase(), "Resolution / Format", c.resolution != null ? `${c.resolution}  ${c.pixel_format || ""}`.trim() : "—"]);
+    camRows.push([side.toUpperCase(), "Frame rate", c.fps != null ? `${fmt(c.fps, 1)} fps` : (c.fps_raw || "—")]);
     camRows.push([side.toUpperCase(), "Exposure", `${c.exposure ?? "—"}  (auto: ${c.auto_exposure === 3 ? "on" : "off"})`]);
     camRows.push([side.toUpperCase(), "White balance", `${c.wb_temp ?? "—"} K  (auto: ${c.auto_wb === 1 ? "on" : "off"})`]);
     camRows.push([side.toUpperCase(), "Focus", `${c.focus ?? "—"}  (auto: ${c.autofocus === 1 ? "on" : "off"})`]);
