@@ -65,6 +65,15 @@ def capture_camera_settings(device: str) -> dict:
     apply, or the operator may have tuned individual controls since),
     and for a publication record what matters is what the camera was
     genuinely running with.
+
+    Also captures the actual running resolution, pixel format (e.g.
+    MJPG), and frame rate -- operator request to expand this beyond
+    just the tunable controls (exposure/white-balance/focus/etc.) to
+    cover the camera's basic operating specification too. Each of the
+    three v4l2-ctl calls here degrades independently, matching this
+    function's existing contract: a device that answers --list-ctrls
+    but not --get-fmt-video (or vice versa) still returns whatever it
+    could read rather than failing as a whole.
     """
     out = _run(["v4l2-ctl", "-d", device, "--list-ctrls"])
     if out is None:
@@ -84,6 +93,30 @@ def capture_camera_settings(device: str) -> dict:
                         except ValueError:
                             pass
                         break
+
+    fmt_out = _run(["v4l2-ctl", "-d", device, "--get-fmt-video"])
+    if fmt_out:
+        for line in fmt_out.splitlines():
+            line = line.strip()
+            if line.startswith("Width/Height"):
+                val = line.split(":", 1)[1].strip()
+                settings["resolution"] = val.replace("/", "x")
+            elif line.startswith("Pixel Format"):
+                val = line.split(":", 1)[1].strip()
+                # e.g. "'MJPG' (Motion-JPEG)" -- keep the readable form
+                settings["pixel_format"] = val
+
+    parm_out = _run(["v4l2-ctl", "-d", device, "--get-parm"])
+    if parm_out:
+        for line in parm_out.splitlines():
+            line = line.strip()
+            if line.startswith("Frames per second"):
+                val = line.split(":", 1)[1].strip()
+                try:
+                    settings["fps"] = float(val.split()[0])
+                except (ValueError, IndexError):
+                    settings["fps_raw"] = val
+
     return settings
 
 
@@ -214,6 +247,36 @@ def capture_triple_geometry(zone_cfg, cfg=None) -> dict:
         return out
     except Exception as e:
         return {"error": f"could not read triple-camera geometry: {e}"}
+
+
+def capture_device_status(gantry_ctrl) -> dict:
+    """
+    Arduino connection and the pump/nozzle/AUX state it was reporting
+    at the moment this is called -- meant to be captured at session
+    END (not arm time, like the rest of this module's capture_*
+    functions), since what matters here is the final device state the
+    session actually ran with, not just what was configured going in.
+
+    gantry_ctrl is a GantryController or None (never connected, or
+    connected but reporting disconnected -- both handled the same:
+    arduino_connected=False with the rest left absent rather than
+    guessed).
+    """
+    if gantry_ctrl is None or not getattr(gantry_ctrl.state, "connected", False):
+        return {"arduino_connected": False}
+    s = gantry_ctrl.state
+    return {
+        "arduino_connected": True,
+        "firmware_mode":     s.firmware_mode,
+        "homed":             s.homed,
+        "limit_ok":          s.limit_ok,
+        "pump_on":           s.pump_on,
+        "nozzles_on":        list(s.nozzles),
+        "light_on":          s.light_on,
+        "motor_psu_on":      s.motor_psu_on,
+        "move_speed":        s.move_speed,
+        "home_speed":        s.home_speed,
+    }
 
 
 def capture_software_versions() -> dict:

@@ -100,7 +100,7 @@ except ImportError:
 
 from core.session_provenance import (
     capture_software_versions, capture_model_info, capture_model_classes,
-    capture_triple_geometry, capture_camera_settings,
+    capture_triple_geometry, capture_camera_settings, capture_device_status,
 )
 from datetime import datetime as _datetime
 
@@ -549,6 +549,18 @@ class DetectionPanelTriple(QWidget):
         self._events_history = []
         self.session_started.emit(session_id)
 
+        # Speed/distance and inference-timing telemetry for this
+        # session -- sampled each frame in _run_inference(), aggregated
+        # in _write_session_report(). Distance is a running sum of
+        # straight-line deltas between consecutive odometry poses
+        # (matches how a real path is actually traversed -- sampled
+        # frequently enough per frame that this closely tracks true
+        # distance without needing the full path geometry).
+        self._speed_samples       = []
+        self._distance_traveled_m = 0.0
+        self._last_pose_xy        = None
+        self._inference_times_ms  = []
+
         if ROS_BRIDGE_AVAILABLE:
             try:
                 net_cfg = _NetCfg()
@@ -680,6 +692,40 @@ class DetectionPanelTriple(QWidget):
             started_at   = self._session_start,
             ended_at     = time.time(),
         )
+
+        # Session telemetry -- added directly to the report dict here
+        # rather than threading new parameters through
+        # build_session_report() (core/gui_session_report.py, shared
+        # with the 2-camera system): this data (odometry speed/
+        # distance, per-frame inference timing, final Arduino/pump/
+        # nozzle state) is specific to what THIS panel tracks over the
+        # session, not something the shared assembly function needs to
+        # know how to build. Each of the three pieces degrades
+        # independently -- a session with no odometry, or zero frames
+        # processed, still gets a valid (if empty) report rather than
+        # one that raises building it.
+        def _stats(values):
+            if not values:
+                return {"mean": None, "min": None, "max": None, "count": 0}
+            return {
+                "mean":  round(sum(values) / len(values), 3),
+                "min":   round(min(values), 3),
+                "max":   round(max(values), 3),
+                "count": len(values),
+            }
+
+        speed_stats = _stats(self._speed_samples)
+        report["session_telemetry"] = {
+            "speed_distance": {
+                "mean_speed_mps":   speed_stats["mean"],
+                "max_speed_mps":    speed_stats["max"],
+                "total_distance_m": round(self._distance_traveled_m, 2),
+                "sample_count":     speed_stats["count"],
+            },
+            "inference_ms": _stats(self._inference_times_ms),
+            "devices": capture_device_status(
+                self._actuation.gantry if self._actuation else None),
+        }
 
         out_dir = Path("logs/sessions") / self._session_id
         try:
@@ -940,12 +986,28 @@ class DetectionPanelTriple(QWidget):
 
             result   = self._engine.run_triple(t)
             decision = self._zones.update(result.all_detections_by_camera())
+            self._inference_times_ms.extend(
+                r.inference_ms for r in result.results)
 
             pose  = self._odom.get_pose() if self._odom else None
             speed = pose['speed'] if pose else 0.0
             if pose is None:
                 pose = {'x': 0.0, 'y': 0.0, 'heading': 0.0, 'speed': 0.0}
             effective_speed = 0.5 if self._static_test else speed
+
+            # Session-long speed/distance telemetry -- real odometry
+            # only (matches main_gui_rgb.py's own convention of never
+            # treating the static-test speed override as a real
+            # traveled distance): a static-test session correctly
+            # reports 0 m traveled and no speed samples, since nothing
+            # physically moved.
+            if self._odom is not None and pose is not None:
+                self._speed_samples.append(speed)
+                if self._last_pose_xy is not None:
+                    dx = pose['x'] - self._last_pose_xy[0]
+                    dy = pose['y'] - self._last_pose_xy[1]
+                    self._distance_traveled_m += (dx * dx + dy * dy) ** 0.5
+                self._last_pose_xy = (pose['x'], pose['y'])
 
             # Which nozzles have an active RAW zone decision this
             # frame -- 1:1 camera-to-nozzle now, so no more OR-ing
