@@ -100,32 +100,43 @@ except ImportError:
 
 from core.session_provenance import (
     capture_software_versions, capture_model_info, capture_model_classes,
-    capture_geometry, capture_camera_settings,
+    capture_triple_geometry, capture_camera_settings,
 )
 from datetime import datetime as _datetime
 
 
-def _capture_triple_provenance(cfg, engine=None, cam1_device=None,
+def _capture_triple_provenance(cfg, zone_cfg, engine=None, cam1_device=None,
                                cam2_device=None, cam3_device=None) -> dict:
     """
     Triple-camera equivalent of core/session_provenance.py's
     capture_full_provenance() -- that function hardcodes exactly a
     left/right pair (cams["left"]/cams["right"]), so a 3-camera
     session reuses its own already camera-count-agnostic building
-    blocks (software/model/model_classes/geometry/per-camera settings)
-    directly rather than shoehorning 3 devices into 2 named slots or
-    leaving one camera's settings uncaptured entirely. Same
-    best-effort contract as the original: each section degrades
-    independently (a missing v4l2-ctl or git binary never prevents
-    arming), and this whole call is itself wrapped in a try/except by
-    its caller (_det_start()).
+    blocks (software/model/model_classes/per-camera settings) directly
+    rather than shoehorning 3 devices into 2 named slots or leaving
+    one camera's settings uncaptured entirely. Same best-effort
+    contract as the original: each section degrades independently (a
+    missing v4l2-ctl or git binary never prevents arming), and this
+    whole call is itself wrapped in a try/except by its caller
+    (_det_start()).
+
+    Geometry specifically uses capture_triple_geometry(zone_cfg, cfg)
+    -- NOT capture_geometry(cfg) -- since this system's real zone/
+    nozzle geometry lives on zone_cfg (a TripleZoneConfig), a
+    genuinely different, separate object from cfg.zones (the unused-
+    by-this-system 2-camera ZoneConfig capture_geometry() reads).
+    Confirmed on a real generated report that calling
+    capture_geometry(cfg) here produced meaningless values (a "B1/B2
+    split" and 4 nozzle centers for "N1/N2/N2/N3" on a 3-camera, 1:1
+    zone-to-nozzle system that has neither) -- not mislabeled, the
+    wrong config object's defaults entirely.
     """
     prov = {
         "captured_at":   _datetime.now().isoformat(timespec="seconds"),
         "software":      capture_software_versions(),
         "model":         capture_model_info(cfg),
         "model_classes": capture_model_classes(engine),
-        "geometry":      capture_geometry(cfg),
+        "geometry":      capture_triple_geometry(zone_cfg, cfg),
     }
 
     cams = {}
@@ -508,7 +519,7 @@ class DetectionPanelTriple(QWidget):
         # never blocks arming.
         try:
             self._provenance = _capture_triple_provenance(
-                self._cfg, engine=self._engine,
+                self._cfg, self._zone_cfg, engine=self._engine,
                 cam1_device=CAM1_DEVICE, cam2_device=CAM2_DEVICE,
                 cam3_device=CAM3_DEVICE)
         except Exception as e:

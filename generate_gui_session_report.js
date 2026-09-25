@@ -1,5 +1,5 @@
 // generate_gui_session_report.js
-// ABEN Dual RGB Detection System — GUI Session Report → .docx
+// ABEN RGB Detection Systems (Dual or Triple camera) — GUI Session Report → .docx
 //
 // Consumes the JSON written by core/gui_session_report.py (a GUI
 // ARM DETECTION session: operator-entered metadata, full system
@@ -53,12 +53,24 @@ const mcls  = prov.model_classes   || {};
 const geo   = prov.geometry        || {};
 const cams  = prov.cameras         || {};
 
+// Camera-count-agnostic title/pipeline text -- geo.system === "triple"
+// is the primary signal (set explicitly by core/session_provenance.py's
+// capture_triple_geometry()); cams.cam1 is a second, independent check
+// for robustness against an older report whose geometry section came
+// from a failed capture (geo would be {} / no "system" key) but whose
+// cameras section still shows the triple-camera shape (cam1/cam2/cam3
+// keys, vs the 2-camera system's left/right).
+const isTriple = geo.system === "triple" || cams.cam1 !== undefined;
+const systemName = isTriple ? "Triple RGB Detection System" : "Dual RGB Detection System";
+const systemNameShort = isTriple ? "Triple RGB Detection" : "Dual RGB Detection";
+const pipelineCameraLabel = isTriple ? "eMeet C960 4K (Triple RGB)" : "eMeet C960 4K (Dual RGB)";
+
 const children = [];
 
 // ── Title page ──────────────────────────────────────────────
 children.push(
   new Paragraph({ spacing: { before: 1600 }, alignment: AlignmentType.CENTER,
-    children: [new TextRun({ text: "Dual RGB Detection System", bold: true, size: 56, color: COLOR_ACCENT })] }),
+    children: [new TextRun({ text: systemName, bold: true, size: 56, color: COLOR_ACCENT })] }),
   new Paragraph({ alignment: AlignmentType.CENTER, spacing: { before: 200, after: 100 },
     children: [new TextRun({ text: "Session Report", size: 30 })] }),
   new Paragraph({ alignment: AlignmentType.CENTER, spacing: { before: 400 },
@@ -91,7 +103,7 @@ if (warnings.length > 0) {
 children.push(h1("Executive Summary"));
 const n = stats.total_events || 0;
 children.push(p(
-  `This report documents an ARM DETECTION session of the Dual RGB Detection ` +
+  `This report documents an ARM DETECTION session of the ${systemNameShort} ` +
   `System operated by ${meta.operator || "an unrecorded operator"}` +
   `${meta.institution ? ` (${meta.institution})` : ""}. ` +
   (n > 0
@@ -109,7 +121,7 @@ if (mcls.available) {
   ));
 }
 children.push(p(
-  `Pipeline: eMeet C960 4K (Dual RGB) → ${model.detection_mode === "cls" ? "classification" : "YOLO segmentation"} → ` +
+  `Pipeline: ${pipelineCameraLabel} → ${model.detection_mode === "cls" ? "classification" : "YOLO segmentation"} → ` +
   `zone/nozzle geometry → distance-buffered spray decision → Arduino nozzle control.`
 ));
 children.push(divider());
@@ -140,6 +152,28 @@ if (meta.notes) {
 children.push(divider());
 
 // ── System Configuration ────────────────────────────────────
+// Zone/nozzle geometry rows differ by system: geo.system === "triple"
+// (set by core/session_provenance.py's capture_triple_geometry())
+// means a 3-camera, 1:1 camera-to-nozzle layout with no B1/B2 split
+// at all -- rendering the 2-camera system's own field names for a
+// triple-camera report produced meaningless values on a real
+// generated report (600/1700/400/1400px, "N1/N2/N2/N3" with N2
+// listed twice), the wrong config object's defaults, not just the
+// wrong words. Absent geo.system (older reports, or a genuine
+// capture_geometry() failure) falls back to the original 2-camera
+// rendering unchanged.
+const zoneRows = geo.system === "triple"
+  ? [
+      ["Geometry", "Cam1/Cam2/Cam3 zone boundaries",
+        `${geo.cam1_max_x ?? "—"} / ${geo.cam2_min_x ?? "—"}\u2013${geo.cam2_max_x ?? "—"} / ${geo.cam3_min_x ?? "—"} px`],
+      ["Geometry", "Nozzle centers (N1/N2/N3, measured)",
+        `${geo.cam1_nozzle_x ?? "—"} / ${geo.cam2_nozzle_x ?? "—"} / ${geo.cam3_nozzle_x ?? "—"} px`],
+    ]
+  : [
+      ["Geometry", "B1 / B2 split", `${geo.b1_split_x ?? "—"} px  /  ${geo.b2_split_x ?? "—"} px`],
+      ["Geometry", "Nozzle centers (N1/N2/N2/N3)", `${geo.n1_center_cam1 ?? "—"} / ${geo.n2_center_cam1 ?? "—"} / ${geo.n2_center_cam2 ?? "—"} / ${geo.n3_center_cam2 ?? "—"} px`],
+    ];
+
 children.push(h1("System Configuration"));
 children.push(simpleTable(
   ["Component", "Setting", "Value"],
@@ -154,8 +188,7 @@ children.push(simpleTable(
     ["Model", "Modified", model.model_modified || "—"],
     ["Model", "Classes", mcls.available ? `${mcls.class_count}: ${Object.values(mcls.classes || {}).join(", ")}` : "unavailable"],
     ["Model", "Stub mode (no real inference)", mcls.stub_mode ? "YES — results are placeholders" : "no"],
-    ["Geometry", "B1 / B2 split", `${geo.b1_split_x ?? "—"} px  /  ${geo.b2_split_x ?? "—"} px`],
-    ["Geometry", "Nozzle centers (N1/N2/N2/N3)", `${geo.n1_center_cam1 ?? "—"} / ${geo.n2_center_cam1 ?? "—"} / ${geo.n2_center_cam2 ?? "—"} / ${geo.n3_center_cam2 ?? "—"} px`],
+    ...zoneRows,
     ["Geometry", "Nozzle Y line", geo.nozzle_y_px != null ? `${geo.nozzle_y_px} px` : "—"],
     ["Geometry", "Camera height", geo.camera_height_m != null ? `${fmt(geo.camera_height_m, 3)} m` : "—"],
     ["Geometry", "GSD", geo.gsd_m_per_px != null ? `${fmt(geo.gsd_m_per_px * 1000, 3)} mm/px` : "—"],

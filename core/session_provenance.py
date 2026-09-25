@@ -162,6 +162,60 @@ def capture_geometry(cfg) -> dict:
         return {"error": f"could not read geometry: {e}"}
 
 
+def capture_triple_geometry(zone_cfg, cfg=None) -> dict:
+    """
+    Triple-camera equivalent of capture_geometry() above -- deliberately
+    a SEPARATE function, not a reshape of the same one, because the two
+    systems' real ZONE geometry lives on genuinely different config
+    objects with different field names: the 2-camera system's zone
+    boundaries and nozzle centers live on cfg.zones (a dual-camera
+    ZoneConfig, B1_SPLIT_X/n1_center_cam1/etc.), while the triple-camera
+    system's real zone/nozzle geometry lives on its own TripleZoneConfig
+    (CAM1_MAX_X/CAM1_NOZZLE_X/etc.) -- a SEPARATE object the triple
+    system actually uses for zone routing. Calling capture_geometry(cfg)
+    from the triple-camera code path (as an earlier version of
+    _capture_triple_provenance() did) read cfg.zones' defaults, which
+    the triple system never uses for any real decision -- not just
+    mislabeled, genuinely the wrong config object's values, confirmed
+    on a real generated report (600/1700/400/1400px, meaningless for a
+    3-camera 1:1 zone-to-nozzle layout that has no B1/B2 split at all).
+
+    cfg.geometry (GeometryConfig -- camera_height_m/gsd_m_per_px/
+    nozzle_y_px/spray distance window) is a SEPARATE, genuinely shared
+    object BOTH systems use identically -- confirmed against a real
+    report showing camera_height_m=0.9271 rendering as "0.927 m",
+    matching this config's own default exactly. That part of
+    capture_geometry()'s original output was already correct for the
+    triple system; kept here (via the optional cfg param) rather than
+    dropped, so this function replaces only the genuinely wrong part.
+    """
+    try:
+        out = {
+            "system":              "triple",
+            "cam1_max_x":          zone_cfg.CAM1_MAX_X,
+            "cam2_min_x":          zone_cfg.CAM2_MIN_X,
+            "cam2_max_x":          zone_cfg.CAM2_MAX_X,
+            "cam3_min_x":          zone_cfg.CAM3_MIN_X,
+            "cam1_nozzle_x":       zone_cfg.CAM1_NOZZLE_X,
+            "cam2_nozzle_x":       zone_cfg.CAM2_NOZZLE_X,
+            "cam3_nozzle_x":       zone_cfg.CAM3_NOZZLE_X,
+            "detection_threshold": zone_cfg.detection_threshold,
+            "non_spray_classes":   list(zone_cfg.non_spray_classes),
+        }
+        if cfg is not None:
+            g = cfg.geometry
+            out.update({
+                "camera_height_m":  getattr(g, "camera_height_m", None),
+                "gsd_m_per_px":     getattr(g, "gsd_m_per_px", None),
+                "nozzle_y_px":      getattr(g, "nozzle_y_px", None),
+                "min_spray_dist_m": getattr(g, "min_spray_dist_m", None),
+                "max_spray_dist_m": getattr(g, "max_spray_dist_m", None),
+            })
+        return out
+    except Exception as e:
+        return {"error": f"could not read triple-camera geometry: {e}"}
+
+
 def capture_software_versions() -> dict:
     """
     Library versions and the exact git commit -- the difference
