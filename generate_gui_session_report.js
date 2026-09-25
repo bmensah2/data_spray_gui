@@ -32,6 +32,53 @@ function getArg(name, def = null) {
   const i = process.argv.indexOf(`--${name}`);
   return i >= 0 ? process.argv[i + 1] : def;
 }
+
+// core/gui_session_report.py writes session_start_iso/session_end_iso
+// via datetime.fromtimestamp() with no explicit timezone -- i.e. the
+// machine's OWN local clock, naive (no "Z" or +HH:MM suffix). On the
+// Jetson that clock is already set to US Central time (confirmed: a
+// real report's "Start" field and its title-page date, the latter run
+// through new Date(...).toUTCString(), differed by exactly 5 hours --
+// the CDT offset -- meaning the naive string IS already Central time,
+// just mislabeled "GMT" by force-converting through toUTCString()).
+// Parsing a naive string with `new Date(...)` is itself timezone-
+// dependent on whatever machine runs THIS SCRIPT (this sandbox's own
+// node reports UTC, not Central -- would silently mis-render if this
+// ran here rather than on the Jetson), so this formats the ISO
+// string's own Y-M-D/H:M:S components directly instead of round-
+// tripping through a Date object at all -- portable regardless of
+// which machine the script runs on, always showing exactly what the
+// timestamp says, labeled as Central since that's what it is.
+// A timestamp that DOES carry an explicit UTC marker (e.g.
+// spray_mission_rgb.py's datetime.utcnow().isoformat() + "Z") is
+// unambiguous, so that path still safely converts via Intl.
+function formatChicago(isoString) {
+  if (!isoString) return "—";
+  const naive = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$/;
+  if (naive.test(isoString)) {
+    const [datePart, timePart] = isoString.split("T");
+    const [y, mo, d] = datePart.split("-").map(Number);
+    const [h, mi, s] = timePart.split(":").map(Number);
+    const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+    const weekday = new Date(Date.UTC(y, mo - 1, d)).toLocaleDateString("en-US", { weekday: "short", timeZone: "UTC" });
+    const hh = String(h).padStart(2, "0");
+    const mm = String(mi).padStart(2, "0");
+    const ss = String(s).padStart(2, "0");
+    return `${weekday}, ${String(d).padStart(2, "0")} ${months[mo - 1]} ${y} ${hh}:${mm}:${ss} Central`;
+  }
+  // Explicit-offset/UTC string -- safe to convert via Intl.
+  try {
+    const fmtd = new Intl.DateTimeFormat("en-US", {
+      timeZone: "America/Chicago", weekday: "short", year: "numeric",
+      month: "short", day: "2-digit", hour: "2-digit", minute: "2-digit",
+      second: "2-digit", hour12: false, timeZoneName: "short",
+    }).format(new Date(isoString));
+    return fmtd;
+  } catch {
+    return isoString;
+  }
+}
+
 const sessionPath = getArg("session");
 const outPath     = getArg("out", "ABEN_Session_Report.docx");
 
@@ -68,14 +115,20 @@ const pipelineCameraLabel = isTriple ? "eMeet C960 4K (Triple RGB)" : "eMeet C96
 const children = [];
 
 // ── Title page ──────────────────────────────────────────────
+// Field ID as the main title (operator request) rather than the
+// system name -- meta.field_id is what identifies THIS report among
+// many from the same system, so it leads; systemName moves to the
+// subtitle line, combined with what was a separate "Session Report"
+// line. The Field: ... detail line below drops its own "Field:"
+// segment since that's now redundant with the title itself.
 children.push(
   new Paragraph({ spacing: { before: 1600 }, alignment: AlignmentType.CENTER,
-    children: [new TextRun({ text: systemName, bold: true, size: 56, color: COLOR_ACCENT })] }),
+    children: [new TextRun({ text: meta.field_id || "(no field ID recorded)", bold: true, size: 56, color: COLOR_ACCENT })] }),
   new Paragraph({ alignment: AlignmentType.CENTER, spacing: { before: 200, after: 100 },
-    children: [new TextRun({ text: "Session Report", size: 30 })] }),
+    children: [new TextRun({ text: `${systemName} — Session Report`, size: 30 })] }),
   new Paragraph({ alignment: AlignmentType.CENTER, spacing: { before: 400 },
     children: [new TextRun({
-      text: `Field: ${meta.field_id || "n/a"}    |    Crop: ${meta.crop || "n/a"}    |    Stage: ${meta.growth_stage || "n/a"}`,
+      text: `Crop: ${meta.crop || "n/a"}    |    Stage: ${meta.growth_stage || "n/a"}`,
       size: 22, color: "555555" })] }),
   new Paragraph({ alignment: AlignmentType.CENTER, spacing: { before: 100 },
     children: [new TextRun({
@@ -83,7 +136,7 @@ children.push(
       size: 20, color: "888888" })] }),
   new Paragraph({ alignment: AlignmentType.CENTER, spacing: { before: 60 },
     children: [new TextRun({
-      text: new Date(report.session_start_iso || report.generated_at || Date.now()).toUTCString(),
+      text: formatChicago(report.session_start_iso || report.generated_at || new Date().toISOString()),
       size: 20, color: "888888" })] }),
   new Paragraph({ children: [new PageBreak()] }),
 );
@@ -139,8 +192,8 @@ children.push(simpleTable(
     ["Crop", meta.crop || "—"],
     ["Growth stage", meta.growth_stage || "—"],
     ["Session ID", report.session_id || "—"],
-    ["Start", report.session_start_iso || "—"],
-    ["End", report.session_end_iso || "—"],
+    ["Start", formatChicago(report.session_start_iso)],
+    ["End", formatChicago(report.session_end_iso)],
     ["Wall duration", report.session_wall_duration_s != null ? `${fmt(report.session_wall_duration_s, 1)} s` : "—"],
   ],
   [2500, 6860],
