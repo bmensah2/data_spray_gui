@@ -34,6 +34,17 @@ app actually expects:
   - half:   True (FP16) by default -- the standard, well-supported
             speed/precision tradeoff for Jetson inference; --no-half
             to export FP32 instead if precision is a concern.
+  - simplify: False by default (note: this is the OPPOSITE of
+            ultralytics' own default). Confirmed on real hardware:
+            ultralytics' onnxslim graph-optimization pass crashes
+            with a C++ assertion failure (abort()/core dump -- a hard
+            process crash, not a Python exception, so it can't be
+            caught or retried mid-run) on a YOLO11-seg model on
+            Jetson/aarch64. Skipping it produces a slightly less
+            graph-optimized ONNX/engine -- a real but minor tradeoff
+            against a crash that stops the export entirely. Pass
+            --simplify to opt back into ultralytics' default if a
+            different model/platform doesn't hit this.
 
 Usage (run ON THE JETSON, where the real weights and TensorRT/CUDA
 libraries live -- this cannot run in a sandbox without a GPU):
@@ -41,6 +52,9 @@ libraries live -- this cannot run in a sandbox without a GPU):
     python3 tools/export_tensorrt.py --mode cls       # exports cls model
     python3 tools/export_tensorrt.py --mode both      # exports both
     python3 tools/export_tensorrt.py --no-half        # FP32 instead of FP16
+    python3 tools/export_tensorrt.py --simplify       # opt into onnxslim
+                                                        # (known to crash on
+                                                        # this setup)
 
 What to expect: TensorRT engine compilation genuinely takes several
 minutes (the exact time depends on the model and Jetson power mode --
@@ -60,7 +74,7 @@ if str(_ROOT) not in sys.path:
 
 
 def export_one(pt_path: Path, engine_path: Path, imgsz: int, device: str,
-               half: bool) -> bool:
+               half: bool, simplify: bool) -> bool:
     """
     Export one .pt file to TensorRT. Returns True on success.
     Ultralytics' own export() writes the resulting .engine file next
@@ -84,10 +98,21 @@ def export_one(pt_path: Path, engine_path: Path, imgsz: int, device: str,
 
     print(f"\nExporting {pt_path.name} → {engine_path.name}")
     print(f"  imgsz={imgsz}  batch=1  device={device}  "
-          f"half={'FP16' if half else 'FP32'}")
+          f"half={'FP16' if half else 'FP32'}  "
+          f"simplify={simplify}")
     print("  This genuinely takes a few minutes (TensorRT is "
           "compiling/optimizing the engine for THIS specific Jetson "
           "-- not a hang).")
+    if not simplify:
+        print("  simplify=False: skipping ultralytics' onnxslim graph-"
+              "optimization pass. Confirmed on this exact setup "
+              "(a YOLO11-seg model on Jetson/aarch64) to crash with a "
+              "C++-level assertion failure -- a real abort()/core dump, "
+              "not a Python exception, so it can't be caught or "
+              "auto-retried within this same run. Skipping it produces "
+              "a slightly less graph-optimized ONNX/engine -- a real "
+              "but minor tradeoff against a crash that stops the "
+              "export entirely.")
 
     t0 = time.time()
     model = YOLO(str(pt_path))
@@ -98,6 +123,7 @@ def export_one(pt_path: Path, engine_path: Path, imgsz: int, device: str,
             batch=1,
             device=device,
             half=half,
+            simplify=simplify,
         )
     except Exception as e:
         print(f"✗ Export failed: {e}")
@@ -133,6 +159,16 @@ def main():
     parser.add_argument(
         "--no-half", action="store_true",
         help="Export FP32 instead of the default FP16")
+    parser.add_argument(
+        "--simplify", action="store_true",
+        help="Run ultralytics' onnxslim graph-optimization pass "
+             "(ultralytics' own default is on). OFF by default HERE: "
+             "confirmed on a YOLO11-seg model on Jetson/aarch64 to "
+             "crash with a C++ assertion failure and abort()/core "
+             "dump -- a hard process crash, not a Python exception, "
+             "so it can't be caught or recovered from mid-run. Only "
+             "pass this if you've confirmed your specific model/"
+             "platform doesn't hit that crash.")
     args = parser.parse_args()
 
     try:
@@ -153,11 +189,13 @@ def main():
 
     print("ABEN Triple RGB — TensorRT Export")
     print(f"input_size={m.input_size}  device={m.device}  "
-         f"precision={'FP16' if half else 'FP32'}")
+         f"precision={'FP16' if half else 'FP32'}  "
+         f"simplify={args.simplify}")
 
     all_ok = True
     for label, pt_path, engine_path in targets:
-        ok = export_one(pt_path, engine_path, m.input_size, m.device, half)
+        ok = export_one(pt_path, engine_path, m.input_size, m.device, half,
+                        args.simplify)
         all_ok = all_ok and ok
 
     print("\n" + "=" * 60)
