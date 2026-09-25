@@ -64,7 +64,7 @@ from core.triple_emeet_camera import CAM1_DEVICE, CAM2_DEVICE, CAM3_DEVICE
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("ABEN — Triple RGB Imaging & Spraying (Standalone)")
+        self.setWindowTitle("DASHBOARD")
         # Matches main_gui_rgb.py's own setMinimumSize()+resize() pair
         # (that app: 1400x820 minimum, 1600x900 default) -- sized
         # somewhat larger here since this app's top toolbar row packs
