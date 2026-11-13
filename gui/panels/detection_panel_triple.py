@@ -101,6 +101,7 @@ except ImportError:
 from core.session_provenance import (
     capture_software_versions, capture_model_info, capture_model_classes,
     capture_triple_geometry, capture_camera_settings, capture_device_status,
+    capture_system_info,
 )
 from datetime import datetime as _datetime
 
@@ -137,6 +138,7 @@ def _capture_triple_provenance(cfg, zone_cfg, engine=None, cam1_device=None,
         "model":         capture_model_info(cfg),
         "model_classes": capture_model_classes(engine),
         "geometry":      capture_triple_geometry(zone_cfg, cfg),
+        "system_info":   capture_system_info(),
     }
 
     cams = {}
@@ -715,6 +717,10 @@ class DetectionPanelTriple(QWidget):
             }
 
         speed_stats = _stats(self._speed_samples)
+        try:
+            report["system_info"] = (self._provenance or {}).get("system_info")
+        except Exception:
+            pass
         report["session_telemetry"] = {
             "speed_distance": {
                 "mean_speed_mps":   speed_stats["mean"],

@@ -20,7 +20,10 @@ session from being recorded.
 """
 
 import logging
+import os
 import platform
+import re
+import shutil
 import subprocess
 from datetime import datetime
 from pathlib import Path
@@ -298,6 +301,108 @@ def capture_device_status(gantry_ctrl) -> dict:
     }
 
 
+def _read_text(path, limit=400):
+    """Read a small text file, or None. Never raises."""
+    try:
+        return Path(path).read_text(errors="replace").replace("\x00", "").strip()[:limit]
+    except Exception:
+        return None
+
+
+def _dpkg_version(*patterns):
+    """First installed dpkg package version matching any pattern, else None."""
+    for pat in patterns:
+        out = _run(["dpkg-query", "-W", "-f=${Package} ${Version}\\n", pat])
+        if out:
+            line = out.splitlines()[0].split(None, 1)
+            if len(line) == 2:
+                return line[1]
+    return None
+
+
+def capture_system_info() -> dict:
+    """
+    Platform/compute stack the session ran on (JetPack/L4T, CUDA, cuDNN,
+    TensorRT, power mode, memory, GPU, disk, attached USB devices).
+    Best-effort: every field degrades independently to None/absent on
+    non-Jetson hosts or when a tool needs privileges. Never raises.
+    """
+    info = {}
+    try:
+        info["device_model"] = _read_text("/proc/device-tree/model")
+        rel = _read_text("/etc/nv_tegra_release", 600)
+        if rel:
+            m = re.search(r"R(\d+)\s*\(release\),\s*REVISION:\s*([\d.]+)", rel)
+            info["l4t"] = f"R{m.group(1)}.{m.group(2)}" if m else rel.splitlines()[0]
+        info["jetpack"] = _dpkg_version("nvidia-jetpack")
+        info["cuda"] = None
+        nvcc = _run(["nvcc", "--version"]) or _run(["/usr/local/cuda/bin/nvcc", "--version"])
+        if nvcc:
+            m = re.search(r"release ([\d.]+).*?V([\d.]+)", nvcc, re.S)
+            info["cuda"] = m.group(2) if m else None
+        info["cudnn"] = _dpkg_version("libcudnn9-cuda-12", "libcudnn8", "libcudnn9*")
+        info["tensorrt"] = _dpkg_version("tensorrt", "libnvinfer10", "libnvinfer8")
+        try:
+            import tensorrt
+            info["tensorrt"] = getattr(tensorrt, "__version__", info["tensorrt"])
+        except Exception:
+            pass
+
+        # Power mode: nvpmodel needs root on some images, so fall back
+        # to the model name shown in its status file.
+        pm = _run(["nvpmodel", "-q"])
+        if pm:
+            lines = [l for l in pm.splitlines() if l.strip()]
+            info["power_mode"] = next((l.split(":", 1)[-1].strip() for l in lines
+                                       if "Mode:" in l or "NV Power Mode" in l), lines[-1])
+        else:
+            info["power_mode"] = None
+
+        info["kernel"] = platform.release()
+        info["cpu_cores"] = os.cpu_count()
+        cpu = _run(["lscpu"])
+        if cpu:
+            m = re.search(r"Model name:\s*(.+)", cpu)
+            info["cpu_model"] = m.group(1).strip() if m else None
+
+        mem = _read_text("/proc/meminfo", 4000)
+        if mem:
+            m = re.search(r"MemTotal:\s+(\d+)\s*kB", mem)
+            if m:
+                info["memory_total_gib"] = round(int(m.group(1)) / 1048576, 1)
+
+        try:
+            import torch
+            if torch.cuda.is_available():
+                prop = torch.cuda.get_device_properties(0)
+                info["gpu"] = {
+                    "name": prop.name,
+                    "compute_capability": f"{prop.major}.{prop.minor}",
+                    "multiprocessors": prop.multi_processor_count,
+                }
+        except Exception:
+            pass
+
+        disks = []
+        for label, path in (("root", "/"), ("project", str(PROJECT_ROOT))):
+            try:
+                u = shutil.disk_usage(path)
+                disks.append({"mount": label, "total_gb": round(u.total / 1e9, 1),
+                              "free_gb": round(u.free / 1e9, 1)})
+            except Exception:
+                pass
+        info["disks"] = disks
+
+        usb = _run(["lsusb"])
+        if usb:
+            info["usb_devices"] = [
+                l.split("ID", 1)[-1].strip() for l in usb.splitlines()
+                if "root hub" not in l.lower() and "ID" in l]
+    except Exception as e:
+        info["error"] = str(e)
+    return info
+
+
 def capture_software_versions() -> dict:
     """
     Library versions and the exact git commit -- the difference
@@ -354,6 +459,7 @@ def capture_full_provenance(cfg, engine=None,
         "model":             capture_model_info(cfg),
         "model_classes":     capture_model_classes(engine),
         "geometry":          capture_geometry(cfg),
+        "system_info":       capture_system_info(),
     }
 
     cams = {}

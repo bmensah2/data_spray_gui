@@ -390,6 +390,33 @@ if (tel) {
   children.push(divider());
 }
 
+// ── System Information (recorded at ARM time) ──
+const si = report.system_info;
+if (si && Object.keys(si).length) {
+  children.push(h1("System Information"));
+  const gpu = si.gpu || {};
+  const rows = [
+    ["Device", si.device_model],
+    ["JetPack", si.jetpack],
+    ["L4T", si.l4t],
+    ["CUDA", si.cuda],
+    ["cuDNN", si.cudnn],
+    ["TensorRT", si.tensorrt],
+    ["Power mode", si.power_mode],
+    ["Kernel", si.kernel],
+    ["CPU", si.cpu_model ? `${si.cpu_model} × ${si.cpu_cores || "?"}` : null],
+    ["Memory", si.memory_total_gib != null ? `${si.memory_total_gib} GiB` : null],
+    ["GPU", gpu.name ? `${gpu.name} (cc ${gpu.compute_capability}, ${gpu.multiprocessors} SMs)` : null],
+    ...(si.disks || []).map(d => [`Disk (${d.mount})`, `${d.free_gb} GB free of ${d.total_gb} GB`]),
+  ].filter(r => r[1] != null && r[1] !== "").map(r => [r[0], String(r[1])]);
+  if (rows.length) children.push(simpleTable(["Item", "Value"], rows, [3000, 6360]));
+  if ((si.usb_devices || []).length) {
+    children.push(h2("Attached USB Devices"));
+    children.push(simpleTable(["Device"], si.usb_devices.map(d => [d]), [9360]));
+  }
+  children.push(divider());
+}
+
 children.push(h1("Camera Settings"));
 if (Object.keys(cams).length === 0) {
   children.push(p("No camera settings were captured for this session.", { color: COLOR_WARN }));
