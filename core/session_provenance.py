@@ -323,7 +323,7 @@ def _dpkg_version(*patterns):
 def capture_system_info() -> dict:
     """
     Platform/compute stack the session ran on (JetPack/L4T, CUDA, cuDNN,
-    TensorRT, power mode, memory, GPU, disk, attached USB devices).
+    TensorRT, memory, GPU, disk, attached USB devices).
     Best-effort: every field degrades independently to None/absent on
     non-Jetson hosts or when a tool needs privileges. Never raises.
     """
@@ -347,16 +347,6 @@ def capture_system_info() -> dict:
             info["tensorrt"] = getattr(tensorrt, "__version__", info["tensorrt"])
         except Exception:
             pass
-
-        # Power mode: nvpmodel needs root on some images, so fall back
-        # to the model name shown in its status file.
-        pm = _run(["nvpmodel", "-q"])
-        if pm:
-            lines = [l for l in pm.splitlines() if l.strip()]
-            info["power_mode"] = next((l.split(":", 1)[-1].strip() for l in lines
-                                       if "Mode:" in l or "NV Power Mode" in l), lines[-1])
-        else:
-            info["power_mode"] = None
 
         info["kernel"] = platform.release()
         info["cpu_cores"] = os.cpu_count()

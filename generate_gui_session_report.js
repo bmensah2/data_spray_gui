@@ -402,7 +402,6 @@ if (si && Object.keys(si).length) {
     ["CUDA", si.cuda],
     ["cuDNN", si.cudnn],
     ["TensorRT", si.tensorrt],
-    ["Power mode", si.power_mode],
     ["Kernel", si.kernel],
     ["CPU", si.cpu_model ? `${si.cpu_model} × ${si.cpu_cores || "?"}` : null],
     ["Memory", si.memory_total_gib != null ? `${si.memory_total_gib} GiB` : null],
